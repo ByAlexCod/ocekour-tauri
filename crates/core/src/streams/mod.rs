@@ -4,6 +4,7 @@
 pub mod lines;
 pub mod rancher;
 pub mod kafka;
+pub mod manager;
 
 use crate::error::SourceError;
 use crate::logs::LogLine;

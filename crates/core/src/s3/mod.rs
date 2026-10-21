@@ -2,6 +2,7 @@
 //! envoi en plusieurs parties, renommage, suppression) avec progression et annulation.
 
 pub mod client;
+pub mod service;
 
 use crate::config::S3Connection;
 use crate::error::{ErrorCode, SourceError};

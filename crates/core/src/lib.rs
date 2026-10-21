@@ -18,6 +18,11 @@ pub mod settings;
 pub mod text;
 pub mod yaml;
 pub mod streams;
+pub mod app;
+pub mod mcp;
+pub mod services;
+pub mod sources;
+pub mod ui;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 #[cfg(test)]
