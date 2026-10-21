@@ -46,7 +46,7 @@ parking_lot = "0.12"
 once_cell = "1"
 notify = "8"
 dirs = "6"
-quick-xml = "0.38"
+quick-xml = { version = "0.38", features = ["serialize"] }
 percent-encoding = "2"
 kafka-protocol = { version = "0.18", default-features = false, features = ["client", "broker", "gzip", "zstd", "snappy", "lz4"] }
 apache-avro = "0.22"

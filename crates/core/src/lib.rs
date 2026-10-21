@@ -8,6 +8,7 @@ pub mod logging;
 pub mod logs;
 pub mod net;
 pub mod rancher;
+pub mod s3;
 pub mod schema;
 pub mod secrets;
 pub mod text;

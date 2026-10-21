@@ -196,6 +196,7 @@ mod tests {
         record.put("id", 42i64);
         record.put("client", "Dupont");
         record.put("note", Avro::Union(0, Box::new(Avro::Null)));
+        #[allow(deprecated)]
         let bytes = apache_avro::to_avro_datum(&schema, record).unwrap();
         #[allow(deprecated)]
         let v = apache_avro::from_avro_datum(&schema, &mut bytes.as_slice(), None).unwrap();
