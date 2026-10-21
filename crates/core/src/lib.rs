@@ -2,6 +2,7 @@
 //! (Tauri) et le mode sans interface (MCP, notifications) ne sont que des surcouches.
 
 pub mod analytics;
+pub mod bdd;
 pub mod config;
 pub mod connections;
 pub mod error;
@@ -23,6 +24,7 @@ pub mod mcp;
 pub mod services;
 pub mod sources;
 pub mod ui;
+pub mod web;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 #[cfg(test)]

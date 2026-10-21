@@ -392,5 +392,7 @@ pub fn core_tools() -> Vec<Tool> {
 pub fn all() -> Vec<Tool> {
     let mut t = core_tools();
     t.extend(crate::services::tools::all());
+    t.extend(crate::web::tools::tools());
+    t.extend(crate::bdd::tools::tools());
     t
 }

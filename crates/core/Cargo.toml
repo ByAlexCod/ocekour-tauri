@@ -65,6 +65,7 @@ toml_edit = "0.23"
 crc32c = "0.6"
 rcgen = { version = "0.14", optional = true }
 tokio-stream = "0.1"
+tokio-postgres-rustls = "0.13"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation", "Win32_System_Memory"] }

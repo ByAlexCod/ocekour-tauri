@@ -1,6 +1,7 @@
 //! L'application sans interface : tous les services, partagés par la fenêtre (Tauri), le
 //! serveur MCP et le mode headless. L'interface n'est qu'une surcouche (trait `Ui`).
 
+use crate::bdd::DatabaseManager;
 use crate::analytics::{self, Analytics, AnalyticsEvent, track};
 use crate::config::ConfigStore;
 use crate::connections::{Connections, PresetSummary};
@@ -13,6 +14,7 @@ use crate::services::Accounts;
 use crate::services::journal::ActionJournal;
 use crate::streams::manager::StreamManager;
 use crate::ui::Ui;
+use crate::web::browser::WebHub;
 use base64::Engine;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -68,6 +70,10 @@ pub struct App {
     pub accounts: Arc<Accounts>,
     pub journal: Arc<ActionJournal>,
     pub mcp_http: McpHttpServer,
+    /// Navigateur piloté par les outils web_* (partagé entre les appels).
+    pub web: WebHub,
+    /// Bases de données en lecture seule (outils bdd_*).
+    pub databases: DatabaseManager,
     mcp_error: Mutex<Option<String>>,
     tools: once_cell::sync::OnceCell<Arc<Vec<Tool>>>,
     licence_loading: tokio::sync::OnceCell<()>,
@@ -123,7 +129,7 @@ impl App {
         analytics.start();
 
         let app = Arc::new(App {
-            version: options.version,
+            version: options.version.clone(),
             ui: options.ui,
             streams: StreamManager::new(connections.clone()),
             s3: S3Service::new(connections.clone()),
@@ -132,6 +138,14 @@ impl App {
                 Arc::new(move || mcp_token(&secrets, false))
             }),
             mcp_error: Mutex::new(None),
+            databases: DatabaseManager::new(config.clone(), secrets.clone()),
+            web: WebHub::new(
+                {
+                    let config = config.clone();
+                    Arc::new(move || config.config().web.clone())
+                },
+                &format!("Ocekour/{}", options.version),
+            ),
             data_dir,
             config,
             secrets,
@@ -252,6 +266,7 @@ impl App {
     pub async fn shutdown(&self) {
         self.mcp_http.stop();
         self.licence.stop();
+        self.web.dispose().await;
         let _ = tokio::time::timeout(Duration::from_secs(2), self.analytics.stop()).await;
     }
 }
