@@ -394,5 +394,6 @@ pub fn all() -> Vec<Tool> {
     t.extend(crate::services::tools::all());
     t.extend(crate::web::tools::tools());
     t.extend(crate::bdd::tools::tools());
+    t.extend(crate::contexte::tools::tools());
     t
 }

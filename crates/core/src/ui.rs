@@ -31,6 +31,8 @@ pub struct OpenOptions {
 pub trait Ui: Send + Sync {
     /// Événement vers les fenêtres (`config:changed`, `streams:event`…).
     fn emit(&self, _event: &str, _payload: Value) {}
+    /// Événement pour une seule fenêtre (flux, progression S3) ; à défaut, pour toutes.
+    fn emit_to(&self, _window: &str, event: &str, payload: Value) { self.emit(event, payload) }
     /// Boîte « Enregistrer sous » ; `None` si annulée.
     async fn save_dialog(&self, _title: &str, _default_path: PathBuf, _filters: Vec<FileFilter>) -> Option<PathBuf> { None }
     /// Boîte d'ouverture ; vide si annulée.

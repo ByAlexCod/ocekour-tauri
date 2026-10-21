@@ -21,7 +21,9 @@ impl TestApp {
 }
 
 /// Application dans un dossier temporaire ; `config` : contenu initial de config.yaml.
-pub async fn test_app(config: &str, activate: bool) -> TestApp {
+pub async fn test_app(config: &str, activate: bool) -> TestApp { test_app_with(config, activate, Arc::new(NoUi)).await }
+
+pub async fn test_app_with(config: &str, activate: bool, ui: Arc<dyn crate::ui::Ui>) -> TestApp {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("config.yaml"), config).unwrap();
     let (private, public) = format::generate_signing_keys();
@@ -33,7 +35,7 @@ pub async fn test_app(config: &str, activate: bool) -> TestApp {
     };
     let payload = json!({ "v": 1, "id": format::new_licence_id(), "label": "Tests", "issuedAt": "2026-09-24", "mode": "none" });
     let key = format::encode(&payload, "prod1", &private, &obfuscation).unwrap();
-    let mut options = AppOptions::new(dir.path(), "0.3.0", Arc::new(NoUi));
+    let mut options = AppOptions::new(dir.path(), "0.3.0", ui);
     options.licence_keys = Some(keys);
     let app = App::new(options).unwrap();
     if activate { app.activate(&key).await.unwrap(); }

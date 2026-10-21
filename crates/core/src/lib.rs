@@ -2,9 +2,11 @@
 //! (Tauri) et le mode sans interface (MCP, notifications) ne sont que des surcouches.
 
 pub mod analytics;
+pub mod api;
 pub mod bdd;
 pub mod config;
 pub mod connections;
+pub mod contexte;
 pub mod error;
 pub mod kafka;
 pub mod licence;
@@ -21,6 +23,7 @@ pub mod yaml;
 pub mod streams;
 pub mod app;
 pub mod mcp;
+pub mod notifications;
 pub mod services;
 pub mod sources;
 pub mod ui;

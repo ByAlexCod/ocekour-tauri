@@ -74,6 +74,14 @@ pub struct App {
     pub web: WebHub,
     /// Bases de données en lecture seule (outils bdd_*).
     pub databases: DatabaseManager,
+    /// Mémoire de contexte IA (outils contexte_*).
+    pub context_store: Arc<crate::contexte::store::ContextStore>,
+    /// Notifications GitLab / Jira / Confluence → Rocket.Chat et bureau.
+    pub notifier: Arc<crate::notifications::Notifier>,
+    /// Moteur du contexte IA.
+    pub context: Arc<crate::contexte::ContextEngine>,
+    /// Exports approuvés par la boîte « Enregistrer sous » (jeton → fichier).
+    pub(crate) approved_exports: Mutex<std::collections::HashMap<String, PathBuf>>,
     mcp_error: Mutex<Option<String>>,
     tools: once_cell::sync::OnceCell<Arc<Vec<Tool>>>,
     licence_loading: tokio::sync::OnceCell<()>,
@@ -128,6 +136,30 @@ impl App {
         analytics::install(analytics.clone());
         analytics.start();
 
+        let context_store = Arc::new(crate::contexte::store::ContextStore::new(data_dir.join("contexte")));
+        let usable: Arc<dyn Fn() -> bool + Send + Sync> = {
+            let licence = licence.clone();
+            Arc::new(move || licence.usable())
+        };
+        let ui = options.ui.clone();
+        let notifier = crate::notifications::Notifier::new(
+            accounts.clone(),
+            config.clone(),
+            crate::notifications::state::NotificationState::new(data_dir.join("notifications.json")),
+            Arc::new(track),
+            usable.clone(),
+            Some(Arc::new(move |title: &str, body: &str| ui.notify(title, body))),
+        );
+        let context = crate::contexte::ContextEngine::new(
+            accounts.clone(),
+            accounts.clone(),
+            config.clone(),
+            crate::contexte::state::ContextState::new(data_dir.join("contexte-state.json")),
+            context_store.clone(),
+            Arc::new(track),
+            usable,
+            Arc::new(crate::contexte::llm::discover_here),
+        );
         let app = Arc::new(App {
             version: options.version.clone(),
             ui: options.ui,
@@ -139,6 +171,10 @@ impl App {
             }),
             mcp_error: Mutex::new(None),
             databases: DatabaseManager::new(config.clone(), secrets.clone()),
+            context_store,
+            notifier,
+            context,
+            approved_exports: Mutex::new(Default::default()),
             web: WebHub::new(
                 {
                     let config = config.clone();
@@ -262,11 +298,43 @@ impl App {
         }
     }
 
+    /// Notifications et contexte IA : suivent la configuration, état publié à l'interface
+    /// (à chaque changement, et toutes les 5 s s'il a bougé).
+    pub fn start_background(self: &Arc<Self>) {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        self.config.on_changed(move |_| { let _ = tx.send(()); });
+        let weak = Arc::downgrade(self);
+        tokio::spawn(async move {
+            let mut beat = tokio::time::interval(Duration::from_secs(5));
+            let mut last = (serde_json::Value::Null, serde_json::Value::Null);
+            let mut sync = true;
+            loop {
+                let Some(app) = weak.upgrade() else { break };
+                if sync {
+                    let config = app.config.config();
+                    if config.notifications.enabled { app.notifier.apply() } else { app.notifier.stop() }
+                    if config.contexte.enabled { app.context.apply() } else { app.context.stop() }
+                }
+                let now = (json!(app.notifier.status()), json!(app.context.status()));
+                if now.0 != last.0 { app.ui.emit("notifications:changed", now.0.clone()); }
+                if now.1 != last.1 { app.ui.emit("contexte:changed", now.1.clone()); }
+                last = now;
+                drop(app);
+                tokio::select! {
+                    m = rx.recv() => { if m.is_none() { break } sync = true; }
+                    _ = beat.tick() => sync = false,
+                }
+            }
+        });
+    }
+
     /// Avant de quitter : dernier envoi des statistiques (2 s au plus), flux arrêtés.
     pub async fn shutdown(&self) {
         self.mcp_http.stop();
         self.licence.stop();
         self.web.dispose().await;
+        self.notifier.stop();
+        self.context.stop();
         let _ = tokio::time::timeout(Duration::from_secs(2), self.analytics.stop()).await;
     }
 }
