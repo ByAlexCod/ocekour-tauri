@@ -7,6 +7,8 @@ description = "Cœur d'Ocekour : sources, flux, S3, MCP, services — indépenda
 
 [features]
 default = []
+# Faux serveurs (Rancher, services) : tests et démonstrations.
+testing = ["dep:rcgen"]
 
 [dependencies]
 tokio = { workspace = true }
@@ -46,7 +48,7 @@ notify = "8"
 dirs = "6"
 quick-xml = "0.38"
 percent-encoding = "2"
-kafka-protocol = "0.18"
+kafka-protocol = { version = "0.18", default-features = false, features = ["client", "broker", "gzip", "zstd", "snappy", "lz4"] }
 apache-avro = "0.22"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 htmd = "0.5"
@@ -61,6 +63,8 @@ oracle-rs = "0.1"
 unicode-normalization = "0.1"
 toml_edit = "0.23"
 crc32c = "0.6"
+rcgen = { version = "0.14", optional = true }
+tokio-stream = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation", "Win32_System_Memory"] }

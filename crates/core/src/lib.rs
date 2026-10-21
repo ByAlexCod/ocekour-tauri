@@ -3,6 +3,7 @@
 
 pub mod config;
 pub mod error;
+pub mod kafka;
 pub mod logging;
 pub mod logs;
 pub mod net;
@@ -11,3 +12,8 @@ pub mod schema;
 pub mod secrets;
 pub mod text;
 pub mod yaml;
+pub mod streams;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
+#[cfg(test)]
+mod tests;

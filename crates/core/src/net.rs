@@ -113,16 +113,43 @@ impl ServerCertVerifier for NoVerify {
     }
 }
 
+/// Vérification standard, plus : le certificat du serveur lui-même fourni comme « autorité »
+/// (certificat auto-signé, souvent marqué CA) est accepté, comme avec Node.
+#[derive(Debug)]
+struct Pinned {
+    inner: Arc<rustls::client::WebPkiServerVerifier>,
+    pinned: Vec<CertificateDer<'static>>,
+}
+
+impl ServerCertVerifier for Pinned {
+    fn verify_server_cert(&self, end: &CertificateDer<'_>, inter: &[CertificateDer<'_>], name: &ServerName<'_>, ocsp: &[u8], now: UnixTime) -> Result<ServerCertVerified, rustls::Error> {
+        if self.pinned.iter().any(|p| p.as_ref() == end.as_ref()) {
+            return Ok(ServerCertVerified::assertion());
+        }
+        self.inner.verify_server_cert(end, inter, name, ocsp, now)
+    }
+    fn verify_tls12_signature(&self, message: &[u8], cert: &CertificateDer<'_>, dss: &DigitallySignedStruct) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+    fn verify_tls13_signature(&self, message: &[u8], cert: &CertificateDer<'_>, dss: &DigitallySignedStruct) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> { self.inner.supported_verify_schemes() }
+}
+
 /// Configuration rustls d'une connexion.
 pub fn rustls_config(tls: &Tls) -> Result<ClientConfig, SourceError> {
     let builder = ClientConfig::builder_with_provider(provider())
         .with_safe_default_protocol_versions()
         .map_err(|e| SourceError::new(ErrorCode::Tls, e.to_string()))?;
-    Ok(if tls.insecure {
-        builder.dangerous().with_custom_certificate_verifier(Arc::new(NoVerify(provider()))).with_no_client_auth()
-    } else {
-        builder.with_root_certificates(root_store(tls)?).with_no_client_auth()
-    })
+    if tls.insecure {
+        return Ok(builder.dangerous().with_custom_certificate_verifier(Arc::new(NoVerify(provider()))).with_no_client_auth());
+    }
+    let pinned = match &tls.ca_file { Some(f) => read_ca_certs(f)?, None => vec![] };
+    let inner = rustls::client::WebPkiServerVerifier::builder_with_provider(Arc::new(root_store(tls)?), provider())
+        .build()
+        .map_err(|e| SourceError::new(ErrorCode::Tls, e.to_string()))?;
+    Ok(builder.dangerous().with_custom_certificate_verifier(Arc::new(Pinned { inner, pinned })).with_no_client_auth())
 }
 
 /// Client HTTP(S) pour ces réglages TLS (mis en cache). Aucun proxy (comme Ocekour 1.x).
@@ -208,6 +235,23 @@ pub fn classify(e: &(dyn std::error::Error + 'static), url: &str) -> SourceError
             }
         }
         let text = cause.to_string();
+        if text.contains("invalid peer certificate") {
+            let code = if text.contains("UnknownIssuer") {
+                "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+            } else if text.contains("Expired") {
+                "CERT_HAS_EXPIRED"
+            } else if text.contains("NotValidForName") {
+                "ERR_TLS_CERT_ALTNAME_INVALID"
+            } else if text.contains("CaUsedAsEndEntity") {
+                "DEPTH_ZERO_SELF_SIGNED_CERT"
+            } else {
+                "CERT_INVALID"
+            };
+            return SourceError::new(
+                ErrorCode::Tls,
+                format!("Certificat de {host} non reconnu ({code}). Fournissez le certificat d'autorité (.cer) ou cochez « Ignorer la vérification SSL »."),
+            );
+        }
         if text.contains("dns error") || text.contains("failed to lookup address") || text.contains("Name or service not known") {
             return SourceError::new(ErrorCode::Network, format!("Serveur {host} introuvable (DNS). Vérifiez l'URL."));
         }
