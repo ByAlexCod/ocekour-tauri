@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+
+/* Le thème est piloté par la classe `.dark` sur <html> (voir ThemeService). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800;
+  }
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 rounded-md bg-sky-600 px-2.5 py-1 text-sm text-white hover:bg-sky-500 disabled:opacity-50;
+  }
+  .nav-link {
+    @apply rounded-md px-2.5 py-1 text-slate-600 hover:bg-slate-100 aria-[current=page]:bg-slate-100 aria-[current=page]:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:aria-[current=page]:bg-slate-800 dark:aria-[current=page]:text-slate-100;
+  }
+  .seg {
+    @apply rounded px-2.5 py-0.5 text-slate-600 hover:text-slate-900 aria-checked:bg-slate-200 aria-checked:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 dark:aria-checked:bg-slate-700 dark:aria-checked:text-slate-100;
+  }
+  .crumb {
+    @apply rounded px-1 hover:bg-slate-100 hover:text-sky-700 dark:hover:bg-slate-800 dark:hover:text-sky-300;
+  }
+  .detail-tab {
+    @apply -mb-px border-b-2 border-transparent py-0.5 text-slate-500 hover:text-slate-900 aria-selected:border-sky-500 aria-selected:text-slate-900 dark:hover:text-slate-100 dark:aria-selected:text-slate-100;
+  }
+  .detail-action {
+    @apply rounded px-1 font-sans text-xs text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200;
+  }
+  .menu-item {
+    @apply block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800;
+  }
+  /* Correspondance de recherche surlignée. */
+  .hl {
+    @apply rounded-sm bg-yellow-200 dark:bg-yellow-600/60;
+  }
+  /* Valeur chaîne du détail : guillemets hors du texte (pas d'espace parasite). */
+  .json-string::before,
+  .json-string::after {
+    content: '"';
+  }
+  /* Ligne qui correspond à la recherche (mode « surligner »), sans décaler le texte. */
+  .match-row {
+    box-shadow: inset 3px 0 0 var(--color-yellow-400);
+  }
+  .input {
+    @apply rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900;
+  }
+}
+
+
