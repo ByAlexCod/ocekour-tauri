@@ -10,7 +10,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -76,6 +76,9 @@ pub struct Analytics {
     state: Mutex<State>,
     /// Dernier envoi accepté (ms), 0 si aucun.
     last_delivery: AtomicI64,
+    /// Envois acceptés : `check` le compare (deux envois dans la même milliseconde gardent
+    /// le même `last_delivery`).
+    deliveries: AtomicU64,
     sending: tokio::sync::Mutex<()>,
     stop: tokio_util::sync::CancellationToken,
 }
@@ -86,6 +89,7 @@ impl Analytics {
             options,
             state: Mutex::new(State { queue: vec![], new_visit: true, current_url: "app://ocekour/".into(), visitor: None }),
             last_delivery: AtomicI64::new(0),
+            deliveries: AtomicU64::new(0),
             sending: tokio::sync::Mutex::new(()),
             stop: tokio_util::sync::CancellationToken::new(),
         })
@@ -134,9 +138,9 @@ impl Analytics {
     pub async fn check(&self) -> bool {
         if !self.enabled() { return false; }
         if self.state.lock().queue.is_empty() { self.enqueue(vec![("ping", "1".into())]); }
-        let before = self.last_delivery();
+        let before = self.deliveries.load(Ordering::SeqCst);
         self.flush().await;
-        self.last_delivery() > before
+        self.deliveries.load(Ordering::SeqCst) > before
     }
 
     fn visitor_id(&self) -> String {
@@ -213,6 +217,7 @@ impl Analytics {
                 return;
             }
             self.last_delivery.store(crate::text::now_ms(), Ordering::Relaxed);
+            self.deliveries.fetch_add(1, Ordering::SeqCst);
             if let Some(cb) = &self.options.on_delivery { cb(true); }
         }
     }
@@ -348,6 +353,18 @@ mod tests {
         on.store(true, Ordering::SeqCst);
         stats.flush().await;
         assert!(m.received.lock().is_empty());
+        assert!(stats.check().await);
+    }
+
+    /// Deux vérifications dans la même milliseconde : la seconde aussi voit son envoi.
+    #[tokio::test]
+    async fn verifications_rapprochees() {
+        let m = matomo().await;
+        let dir = tempfile::tempdir().unwrap();
+        let stats = make(&m, dir.path(), Arc::new(AtomicBool::new(true)), None);
+        for _ in 0..20 { assert!(stats.check().await); }
+        m.fail_next.store(true, Ordering::SeqCst);
+        assert!(!stats.check().await);
         assert!(stats.check().await);
     }
 }
