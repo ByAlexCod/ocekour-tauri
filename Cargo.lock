@@ -1825,7 +1825,11 @@ dependencies = [
 name = "ocekour-headless"
 version = "2.0.0"
 dependencies = [
+ "anyhow",
+ "log",
  "ocekour-core",
+ "serde_json",
+ "tempfile",
  "tokio",
 ]
 

@@ -3,11 +3,18 @@ name = "ocekour-headless"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Ocekour sans interface : serveur MCP (stdio, HTTP), notifications, outils d'administration"
 
 [[bin]]
 name = "ocekour-headless"
 path = "src/main.rs"
 
 [dependencies]
-ocekour-core = { workspace = true }
+ocekour-core = { workspace = true, features = ["testing"] }
 tokio = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
