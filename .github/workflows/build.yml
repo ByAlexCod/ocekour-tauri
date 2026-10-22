@@ -115,7 +115,7 @@ jobs:
         run: |
           VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           mkdir -p package/docs
-          cp target/release/ocekour.exe "package/Ocekour-$VERSION.exe"
+          cp target/release/ocekour.exe package/Ocekour.exe
           cp target/release/ocekour-headless.exe package/
           cp target/release/bundle/nsis/*.exe package/ || true
           cp docs/guide/*.md package/docs/ 2>/dev/null || true

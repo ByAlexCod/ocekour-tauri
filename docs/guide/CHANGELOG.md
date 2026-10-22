@@ -13,6 +13,13 @@
   outils MCP.
 - Service Windows ou unité systemd : `sonde service installer`.
 
+**WebView2 livré avec l'exe**
+
+- Le zip contient le runtime WebView2 (dossier `WebView2\`) : Ocekour démarre sur un Windows 10
+  sans WebView2, sans rien installer et sans accès Internet. Message clair si aucun runtime
+  n'est trouvé.
+- L'exe s'appelle désormais `Ocekour.exe` (sans numéro de version).
+
 ## 2.1.0
 
 **Nouveau : fichiers locaux** ([guide](fichiers-locaux.md))

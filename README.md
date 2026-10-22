@@ -72,7 +72,7 @@ Les tests utilisent de vrais serveurs quand ils sont présents (sinon ils sont i
 | `OCEKOUR_BROWSER_PATH`     | Chrome/Chromium/Edge pour les outils `web_*`                    |
 
 La CI (`.github/workflows/build.yml`) lance tous les tests sous Linux avec ces serveurs, puis
-construit sous Windows `Ocekour-<version>.exe`, `ocekour-headless.exe` et l'installateur, avec
+construit sous Windows `Ocekour.exe`, `ocekour-headless.exe` et l'installateur, avec
 les clés d'activation de production (`OCEKOUR_RELEASE=1`, secret `LICENCE_OBFUSCATION`).
 
 En développement, une clé : `cargo run -p ocekour-headless -- cle generer --kid dev --label Dev --mode none`.

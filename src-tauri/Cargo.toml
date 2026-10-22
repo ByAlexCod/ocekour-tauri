@@ -34,7 +34,10 @@ tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+# Mêmes versions que wry (vérification du runtime WebView2 au démarrage).
+webview2-com = "0.39"
+windows-core = "0.62"
 
 [features]
 # Construit pour `tauri dev` / `tauri build` (protocole personnalisé de production).

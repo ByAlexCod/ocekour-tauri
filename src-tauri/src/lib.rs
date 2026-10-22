@@ -4,6 +4,7 @@
 //! n'ouvrent aucune fenêtre et ne chargent pas WebView2.
 
 mod ui;
+pub mod webview2;
 
 use ocekour_core::api::{self, Caller};
 use ocekour_core::app::{App, AppOptions};
@@ -57,9 +58,19 @@ pub fn main() -> i32 {
         return runtime.block_on(ocekour_core::sonde::cli::main(&args[1..]));
     }
     let dir = headless::data_dir(&args);
+    let mode = headless::parse_mode(&args);
+    // Fenêtre : WebView2 vérifié (et runtime livré à côté de l'exe pris en compte) avant de
+    // lancer le moindre fil.
+    #[cfg(windows)]
+    if mode.is_none() {
+        if let Err(message) = webview2::prepare() {
+            webview2::alert(message);
+            return 1;
+        }
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime tokio");
 
-    if let Some(mode) = headless::parse_mode(&args) {
+    if let Some(mode) = mode {
         attach_console();
         // En mode stdio, rien d'autre que le protocole sur la sortie standard.
         ocekour_core::logging::init(&dir, mode != headless::Mode::Stdio);

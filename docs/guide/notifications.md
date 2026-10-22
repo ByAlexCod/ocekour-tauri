@@ -60,7 +60,7 @@ Ocekour n'est **pas un serveur** : les notifications ne partent que **pendant qu
 Vous pouvez le laisser tourner **sans fenêtre**, avec seulement les notifications :
 
 ```
-Ocekour-<version>.exe --notify
+Ocekour.exe --notify
 ```
 
 À lancer au démarrage de la session (raccourci ou tâche planifiée). Il utilise la même

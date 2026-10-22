@@ -4,17 +4,18 @@
 
 ## Installer
 
-Il n'y a **rien à installer**. Copiez `Ocekour-<version>.exe` où vous voulez (Bureau,
-`C:\Outils\`…) et double-cliquez dessus.
+Il n'y a **rien à installer**. Dézippez le dossier où vous voulez (Bureau, `C:\Outils\`…)
+et double-cliquez sur `Ocekour.exe`. Gardez ensemble les fichiers du dossier.
 
 - Windows 10 ou 11, 64 bits.
-- Aucun droit administrateur requis.
-- L'exe (environ 30 Mo) démarre **immédiatement**, sans rien décompresser : l'affichage
-  utilise **Microsoft Edge WebView2**, déjà présent sur Windows 10 et 11.
-- Pour un poste sans WebView2, l'installateur `Ocekour_<version>_x64-setup.exe` (sans droit
-  administrateur) l'installe au besoin.
+- Aucun droit administrateur requis, aucun accès Internet nécessaire.
+- L'affichage utilise **Microsoft Edge WebView2**. Il est livré dans le dossier `WebView2\`, à
+  côté de l'exe : Ocekour fonctionne donc même sur un Windows 10 qui n'a pas WebView2, sans
+  rien installer. Si WebView2 est déjà installé sur le poste, ce dossier peut être supprimé.
+- Si l'exe ne trouve aucun WebView2, il l'indique et explique quoi faire.
 - `ocekour-headless.exe`, livré à côté, offre les modes sans interface (`--mcp`, `--mcp-http`,
-  `--notify`) sans dépendre de WebView2 ; `Ocekour-<version>.exe --mcp` fonctionne aussi.
+  `--notify`, la [sonde](sonde.md)) sans dépendre de WebView2 ; `Ocekour.exe --mcp` fonctionne
+  aussi.
 
 ### Avertissement SmartScreen
 
