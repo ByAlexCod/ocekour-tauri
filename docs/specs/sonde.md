@@ -18,8 +18,10 @@ assemblage, MCP).
 
 Principes :
 
-- **Même binaire, aucune interface** : `ocekour-headless sonde` (Windows et **Linux**), sans
-  WebView2, sans activation (§9), quelques Mo de mémoire.
+- **Même binaire, aucune interface** : `ocekour-headless sonde`, **Windows et Linux dès la
+  2.2**, sans WebView2, quelques Mo de mémoire.
+- **Indépendante de la clé d'activation** (§9).
+- **Un jeton par sonde**, défini sur la sonde (§6).
 - **Lecture seule, liste blanche** : seul ce qui est déclaré dans la configuration de la sonde
   est lisible ; aucun chemin arbitraire ne peut être demandé.
 - **Sécurisé par défaut** : TLS obligatoire hors `127.0.0.1`, jeton d'accès, certificat épinglé
@@ -27,16 +29,17 @@ Principes :
 - **Réutilise le protocole des flux** : la sonde envoie les mêmes événements que le cœur
   (`lines`, `status`, `notice`) ; côté poste, une sonde est une connexion de plus.
 
-Hors périmètre 2.2 : exécuter des commandes à distance ; écrire ou supprimer des fichiers ;
-journald / Observateur d'événements Windows / `docker logs` (extensions possibles du modèle de
-source, §3) ; sonde qui se connecte vers le poste (inversion, §11) ; relais entre sondes.
+Hors périmètre 2.2 : écrire ou supprimer des fichiers ; sonde qui se connecte vers le poste
+(les postes joignent directement les machines : seul le port de la sonde est à ouvrir) ;
+relais entre sondes. Les **autres types de sources** (journald, Observateur d'événements
+Windows, `docker logs`, sortie de commande) viennent en **2.3** (§12).
 
 ## 2. Parcours
 
 **Administrateur de la machine distante**
 
 ```
-ocekour-headless sonde init                  # crée sonde.yaml, le certificat et un jeton
+ocekour-headless sonde init                  # crée sonde.yaml, le certificat et le jeton
 # édite sonde.yaml : déclare les sources
 ocekour-headless sonde                       # démarre (premier plan), affiche l'adresse et l'empreinte
 ocekour-headless sonde service installer     # service Windows ou unité systemd (§10)
@@ -47,7 +50,8 @@ ocekour-headless sonde service installer     # service Windows ou unité systemd
 ```
 Sonde prête sur https://srv-recette-01:47120
 Empreinte du certificat : SHA256:9F:2C:…:A1
-Jeton : osk_3bb1e0c4…   (à transmettre de façon sûre ; affiché une seule fois)
+Jeton : osk_3bb1e0c4…   (à transmettre de façon sûre ; affiché une seule fois,
+                        `sonde jeton renouveler` en crée un nouveau et invalide l'ancien)
 ```
 
 **Utilisateur (poste)** : Ajouter une connexion → **Sonde** → URL, jeton → « Tester ». Au
@@ -74,10 +78,7 @@ nom: srv-recette-01            # nom affiché côté poste (défaut : nom de la 
 tls:
   certificat: sonde.crt        # créé par `sonde init` (autosigné, 10 ans) ou fourni (PKI)
   cle: sonde.key
-jetons:                        # empreintes SHA-256, jamais le jeton en clair
-  - id: equipe-paiement
-    empreinte: "sha256:…"
-    sources: ["*"]             # sources autorisées pour ce jeton (défaut : toutes)
+jeton: "sha256:…"              # empreinte du jeton unique de la sonde, jamais le jeton en clair
 sources:
   - id: api-commandes          # [a-z0-9-], stable : clé des liens, profils, favoris
     nom: API commandes
@@ -93,8 +94,9 @@ journal: sonde.log             # accès (qui, quelle source, quand) — jamais l
 ```
 
 Une **source** = `fichier` (un chemin) ou `motif` (glob dans **un seul dossier**, sans `**`).
-Le modèle est extensible (`type: journald`, `type: evenements-windows`) sans changer le
-protocole, mais seuls `fichier` et `motif` sont dans la 2.2.
+Le modèle est extensible (`type: journald`, `type: evenements-windows`…) sans changer le
+protocole : seuls `fichier` et `motif` sont dans la 2.2, les autres en 2.3 (§12).
+Un motif se comporte comme en local (spec fichiers locaux §4 bis), avec le même code.
 
 ## 4. Protocole (HTTP/1.1, JSON)
 
@@ -127,8 +129,8 @@ automatique** sur le nouveau fichier quand il apparaît), `lignes=N`, `depuis=<s
   reconnecte au-delà de 45 s sans rien recevoir (même logique que Rancher : `reconnecting`).
 - Pourquoi NDJSON plutôt que WebSocket / SSE / gRPC : traverse proxys et pare-feu HTTP,
   testable avec `curl`, aucune dépendance supplémentaire, même serveur `hyper` que le MCP.
-- Erreurs : `401` jeton absent/invalide, `403` source non autorisée pour ce jeton, `404` source
-  ou fichier inconnu, `429` limite de flux atteinte, `503` source illisible (droits).
+- Erreurs : `401` jeton absent/invalide, `404` source ou fichier inconnu, `429` limite de flux
+  atteinte, `503` source illisible (droits).
 
 ## 5. Charge et débit
 
@@ -145,10 +147,10 @@ automatique** sur le nouveau fichier quand il apparaît), `lignes=N`, `depuis=<s
 | Lecture de fichiers non prévus       | Liste blanche (`sources`) ; le client ne fournit **jamais** de chemin, seulement un id de source et, pour un motif, un **nom** de fichier vérifié contre le glob (pas de `/`, `\`, `..`). Chemins canonisés, liens symboliques résolus puis revérifiés. |
 | Écoute en clair sur le réseau        | TLS obligatoire si `ecoute` n'est pas une adresse de bouclage ; refus de démarrer sinon.                                                                      |
 | Usurpation de la sonde               | Certificat autosigné **épinglé** par empreinte au premier contact (comparée par l'utilisateur), ou certificat d'une autorité d'entreprise (TLS habituel).       |
-| Vol de jeton                         | Jetons aléatoires 256 bits, stockés **hachés** sur la sonde, chiffrés dans `secrets.json` sur le poste ; révocation : `sonde jeton retirer <id>`.            |
+| Vol de jeton                         | **Un jeton par sonde**, défini sur la sonde : aléatoire 256 bits, stocké **haché** dans `sonde.yaml`, chiffré dans `secrets.json` sur le poste. Fuite → `sonde jeton renouveler` (l'ancien est refusé aussitôt, flux en cours fermés). Qui veut des accès séparés installe des sondes séparées (ports différents). |
 | Brute force                          | Comparaison en temps constant ; 10 échecs/min par IP → blocage 5 min ; tout est journalisé.                                                                   |
 | Déni de service                      | `flux_simultanes`, débit, taille des requêtes, délais de lecture d'en-têtes.                                                                                  |
-| Données sensibles dans les logs      | Hors du rôle de la sonde : c'est l'administrateur qui choisit les sources et les jetons (une source par périmètre, jetons par équipe).                       |
+| Données sensibles dans les logs      | Hors du rôle de la sonde : c'est l'administrateur qui choisit les sources exposées.                                                                          |
 | Droits                               | Lancée avec un compte de service **non administrateur** qui n'a que la lecture des dossiers de logs (documenté pour Windows et Linux).                        |
 
 ## 7. Côté poste
@@ -164,8 +166,7 @@ automatique** sur le nouveau fichier quand il apparaît), `lignes=N`, `depuis=<s
       empreinte: "SHA256:9F:2C:…:A1"   # épinglée ; ou insecure / caFile comme les autres
   ```
 
-  Le jeton est le secret de la connexion (`secrets.json`, chiffré). Préconfiguration par clé
-  d'activation possible comme pour Rancher (sans le jeton).
+  Le jeton est le secret de la connexion (`secrets.json`, chiffré).
 - **Arbre** : connexion › sources › (motif) fichiers. Santé : point vert si la source est
   lisible, gris si absente, rouge si illisible ; taille et âge du dernier changement.
 - **Onglet** : `FileTarget { connectionId, path: [sourceId, fichier?] }` (spec fichiers
@@ -185,18 +186,19 @@ automatique** sur le nouveau fichier quand il apparaît), `lignes=N`, `depuis=<s
   `client.rs` (côté poste : `browse`, `spawn` d'un flux avec reconnexion et curseur).
 - La lecture réutilise `streams/file.rs` (spec fichiers locaux) : même code, mêmes tests.
 - `StreamManager::open` : `Connection::Sonde` → `sonde::client::spawn`.
-- `ocekour-headless` : sous-commande `sonde [init | jeton ajouter|retirer|lister | service
+- `ocekour-headless` : sous-commande `sonde [init | jeton renouveler | service
   installer|desinstaller | verifier]`. `verifier` relit la config et teste chaque source.
-- Build Linux : `ocekour-headless` en `x86_64-unknown-linux-musl` (binaire statique, sans
-  dépendance système) ajouté à la CI ; fonctionnalité Cargo `sonde-seule` pour un binaire réduit
-  (sans Kafka, S3, navigateur, bases) si la taille compte. _(reco)_
+- Livrables 2.2 : **Windows** (`ocekour-headless.exe`, déjà construit) et **Linux**
+  (`x86_64-unknown-linux-musl`, binaire statique sans dépendance système), tous deux en CI et
+  testés sur leur système ; fonctionnalité Cargo `sonde-seule` pour un binaire réduit (sans
+  Kafka, S3, navigateur, bases) si la taille compte. _(reco)_
 
 ## 9. Licence et statistiques
 
-La sonde **ne demande pas de clé d'activation** et **n'envoie aucune statistique** : elle est
-installée par un administrateur sur un serveur, souvent sans accès Internet. L'utilisation
-reste conditionnée côté poste (clé requise pour ouvrir l'application). Côté poste, l'ouverture
-d'un flux de sonde est comptée comme les autres (`Flux / Ouvert / sonde`), sans nom de machine.
+La sonde n'a **aucun rapport avec la clé d'activation** : elle n'en demande pas, n'en lit pas
+et n'en transporte pas ; aucune préconfiguration de sonde par clé. Elle **n'envoie aucune
+statistique** (serveur souvent sans accès Internet). Côté poste, l'ouverture d'un flux de sonde
+est comptée comme les autres flux (`Flux / Ouvert / sonde`), sans nom de machine.
 
 ## 10. Exploitation
 
@@ -213,9 +215,9 @@ d'un flux de sonde est comptée comme les autres (`Flux / Ouvert / sonde`), sans
 ## 11. Tests
 
 - **Sonde** : init (fichiers créés, droits), config invalide refusée avec ligne fautive,
-  rechargement à chaud, TLS obligatoire hors bouclage, jeton valide / invalide / révoqué,
-  jeton limité à certaines sources (403), traversée (`..`, séparateurs, lien symbolique hors
-  dossier) refusée, limites (429), blocage après échecs.
+  rechargement à chaud, TLS obligatoire hors bouclage, jeton valide / invalide / renouvelé
+  (ancien refusé, flux fermés), traversée (`..`, séparateurs, lien symbolique hors dossier)
+  refusée, limites (429), blocage après échecs, démarrage sans aucune clé d'activation.
 - **Flux de bout en bout** (vraie sonde sur un port libre + client du cœur) : N dernières
   lignes, suivi, rotation, bascule de motif, coupure réseau simulée puis **reprise sans perte
   ni doublon** par curseur, `ping` et détection de connexion morte, deux clients sur un même
@@ -225,15 +227,23 @@ d'un flux de sonde est comptée comme les autres (`Flux / Ouvert / sonde`), sans
 - **Binaire** : `ocekour-headless sonde` démarré par les tests (comme `--mcp-http`), sous
   Linux en CI et Windows dans le job de construction.
 
-## 12. Questions ouvertes
+## 12. Décisions et suite
 
-1. **Réseau** : les postes peuvent-ils joindre directement les machines (port à ouvrir), ou
-   faut-il prévoir une sonde qui se connecte **vers** un relais (machines derrière un pare-feu
-   qui n'accepte que le sortant) ?
-2. **Systèmes cibles** : Linux et Windows Server, ou un seul des deux en premier ?
-3. **Autres sources** prioritaires après les fichiers : journald, Observateur d'événements
-   Windows, `docker logs`, sortie d'une commande ?
-4. **Licence** : sonde sans clé (recommandé, §9) ou clé exigée aussi sur la sonde ?
-5. **Jetons** : un jeton par équipe suffit-il, ou faut-il une authentification par compte
-   (AD/LDAP, OIDC) pour tracer qui lit quoi ?
-6. **Partage par lien** d'une source de sonde : utile tel quel, ou à restreindre ?
+Décisions :
+
+- **Réseau** : connexion directe du poste vers la sonde (pas de relais ni d'inversion).
+- **Systèmes** : Windows **et** Linux dès la 2.2.
+- **Jeton** : un seul par sonde, défini sur la sonde (§6).
+- **Licence** : aucun lien avec la clé d'activation (§9).
+
+Version suivante (2.3) : autres types de sources, chacun avec ses tests :
+
+| Type                 | Système | Contenu                                                            |
+| -------------------- | ------- | ------------------------------------------------------------------ |
+| `journald`           | Linux   | unité(s) systemd, priorité → niveau, curseur journald pour la reprise |
+| `evenements-windows` | Windows | journal (Application, System…) et source, niveau, `RecordId` pour la reprise |
+| `docker`             | les deux | conteneur par nom ou label, `docker logs --follow` via l'API Docker |
+| `commande`           | les deux | sortie d'une commande **déclarée** dans `sonde.yaml` (jamais fournie par le poste) |
+
+Question ouverte : le **partage par lien** d'une source de sonde est-il utile tel quel (le
+destinataire doit avoir le jeton), ou faut-il le désactiver ?

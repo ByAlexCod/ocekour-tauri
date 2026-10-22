@@ -21,8 +21,8 @@ Principes :
 - **Rien n'est exposé sans action de l'utilisateur** : seuls les fichiers qu'il a choisis
   sont lus (y compris par les agents, §8).
 
-Hors périmètre 2.1 : dossiers entiers et motifs (`*.log`) en local (voir la sonde, §4) ;
-journaux système (journald, Observateur d'événements Windows) ; écriture ou édition.
+Hors périmètre 2.1 : dossiers entiers (récursifs) ; journaux système (journald, Observateur
+d'événements Windows, prévus pour la sonde en 2.3) ; écriture ou édition.
 
 ## 2. Parcours utilisateur
 
@@ -32,7 +32,9 @@ journaux système (journald, Observateur d'événements Windows) ; écriture ou 
    - **glisser-déposer** un ou plusieurs fichiers sur la fenêtre (un onglet par fichier ;
      Ctrl enfoncé ou plusieurs fichiers → proposer « Ouvrir en assemblage ») ;
    - **ligne de commande** : `ocekour.exe C:\logs\app.log` ouvre le fichier dans la fenêtre
-     existante (instance unique : l'argument est transmis à la fenêtre déjà ouverte).
+     existante (instance unique : l'argument est transmis à la fenêtre déjà ouverte) ;
+   - **motif** : « Ouvrir un motif… » (ou un chemin contenant `*` / `?` en ligne de commande),
+     ex. `C:\app\logs\app-*.log` (§4 bis).
 2. L'onglet s'ouvre comme un onglet de logs : titre = nom du fichier, info-bulle = chemin
    complet, fil d'Ariane `Fichiers locaux / dossier / nom`.
 3. Options de l'onglet : **Suivi / Historique**, **Lignes** (1 000 par défaut, « Tout »),
@@ -49,8 +51,13 @@ export interface FileTarget {
   kind: 'file';
   /** Absent = fichier du poste ; sinon connexion de type `sonde`. */
   connectionId?: string;
-  /** Local : chemin absolu. Sonde : id de la source puis, pour un motif, le fichier choisi. */
+  /**
+   * Local : [chemin absolu du fichier ou du motif, nom du fichier choisi dans le motif ?].
+   * Sonde : [id de la source, nom du fichier choisi dans un motif ?].
+   */
   path: string[];
+  /** Le chemin (local) ou la source (sonde) est un motif. */
+  pattern?: boolean;
   /** Nom affiché (nom du fichier, ou nom de la source de la sonde). */
   name: string;
 }
@@ -84,6 +91,23 @@ Côté cœur, `StreamManager::open` reçoit une **source locale** : connexion r�
 Horodatage d'une ligne : celui reconnu par le parser existant (ISO 8601, `yyyy-MM-dd HH:mm:ss`,
 JSON `@timestamp`…) ; à défaut, **pas d'horodatage** (la colonne heure reste vide, la ligne
 garde sa position). Lignes multi-lignes (stack traces) : regroupées comme aujourd'hui.
+
+## 4 bis. Motifs (`app-*.log`)
+
+Beaucoup d'applications écrivent un fichier par jour ou par taille (`app-2026-10-22.log`,
+`app.log.1`…). Un **motif** désigne cette famille :
+
+- Glob dans **un seul dossier** (`*`, `?`, `[0-9]` ; pas de `**`) : le dossier est fixe, seul le
+  nom de fichier est un motif.
+- Dans l'arbre, le motif est un nœud dépliable listant ses fichiers, **du plus récent au plus
+  ancien** (date de modification), au plus 30, avec taille et âge.
+- Ouvrir **le motif** = suivre **le fichier le plus récent** ; quand un fichier plus récent
+  apparaît (rotation), le suivi **bascule** dessus avec la notice « Nouveau fichier :
+  app-2026-10-23.log ». « Lignes : N » remonte au besoin dans les fichiers précédents pour
+  obtenir N lignes.
+- Ouvrir **un fichier** du motif = l'onglet d'un fichier simple (§4).
+- Le code du motif (liste, tri, bascule) est **le même que celui de la sonde**
+  (`streams/file.rs` + `streams/pattern.rs`).
 
 ## 5. « Depuis » sur un fichier
 
@@ -124,15 +148,19 @@ n'ont accès **qu'aux fichiers que l'utilisateur a déclarés** pour eux.
 - **Cœur** (`streams/file.rs`) : N dernières lignes sur un fichier > 10 Mo (lecture depuis la
   fin), « Tout », suivi (ajouts en direct), rotation par renommage, troncature, suppression puis
   recréation, CRLF, UTF-16 avec BOM, octets invalides, ligne de 5 Mo, `.gz`, « Depuis ».
+- **Motifs** : tri par date, limite de 30, bascule sur un nouveau fichier en suivi, « N lignes »
+  à cheval sur deux fichiers, caractères spéciaux refusés (`**`, séparateurs dans le motif).
 - **MCP** : fichier autorisé lu, fichier hors liste refusé, contournement par `..` et par lien
   symbolique refusé.
 - **Interface** (vitest) : cible `file` (clé, onglet, restauration de session, assemblage),
   récents/favoris, lien de partage désactivé.
 - **Application** : glisser-déposer et `ocekour.exe <fichier>` (test IPC Tauri).
 
-## 10. Questions ouvertes
+## 10. Décisions
 
-1. Dossiers et motifs en local dès la 2.1 (« suivre le plus récent `app-*.log` ») ou seulement
-   via la sonde ?
-2. Accès des agents aux fichiers : liste blanche (§8, recommandé), ou pas d'accès du tout en 2.1 ?
-3. Encodages à prendre en charge en plus d'UTF-8 / UTF-16 (Windows-1252 ?).
+- Motifs en local **dès la 2.1** (§4 bis).
+- Agents : accès limité à la **liste blanche** de l'utilisateur (§8).
+
+## 11. Question ouverte
+
+- Encodages à prendre en charge en plus d'UTF-8 / UTF-16 / Latin-1 (Windows-1252 ?).
