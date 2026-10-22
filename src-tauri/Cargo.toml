@@ -18,7 +18,9 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-ocekour-core = { workspace = true }
+# Mêmes fonctionnalités que ocekour-headless : le cœur n'est compilé qu'une fois pour les deux exe
+# (le code de démonstration inutilisé est retiré à l'édition de liens).
+ocekour-core = { workspace = true, features = ["testing"] }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

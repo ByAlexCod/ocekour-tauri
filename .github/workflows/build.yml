@@ -71,9 +71,25 @@ jobs:
     needs: tests
     runs-on: windows-latest
     steps:
+      - name: Secret LICENCE_OBFUSCATION présent
+        shell: bash
+        run: |
+          if [ ${#LICENCE_OBFUSCATION} -ne 44 ]; then
+            echo "::error::Secret LICENCE_OBFUSCATION absent ou invalide (44 caractères base64) : Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+        env:
+          LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
+      # Defender analyse chaque fichier écrit par cargo : compilation nettement plus lente.
+      - name: Analyse antivirus en temps réel désactivée (runner jetable)
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      # Cache gardé même si le job échoue : sinon il n'est jamais rempli tant qu'un build échoue.
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -87,8 +103,10 @@ jobs:
           # Exe diffusé : clés d'activation de production seulement (docs/cles-activation.md).
           OCEKOUR_RELEASE: '1'
           LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
+      # Mêmes paquets et options que tauri build : les dépendances déjà compilées sont réutilisées
+      # (seul ocekour-headless est compilé ; un `-p ocekour-headless` seul recompilerait tout).
       - name: ocekour-headless.exe (serveur MCP / notifications sans WebView2)
-        run: cargo build --release -p ocekour-headless
+        run: cargo build --release -p ocekour -p ocekour-headless --features ocekour/custom-protocol
         env:
           OCEKOUR_RELEASE: '1'
           LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
@@ -114,11 +132,22 @@ jobs:
     needs: tests
     runs-on: ubuntu-latest
     steps:
+      - name: Secret LICENCE_OBFUSCATION présent
+        shell: bash
+        run: |
+          if [ ${#LICENCE_OBFUSCATION} -ne 44 ]; then
+            echo "::error::Secret LICENCE_OBFUSCATION absent ou invalide (44 caractères base64) : Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+        env:
+          LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: musl-gcc (ring)
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: ocekour-headless (statique)
