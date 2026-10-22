@@ -5,7 +5,7 @@
   import { nodeKey } from '../sources/source-tree.service';
   import { sourceTree as tree } from '../sources/source-tree.svelte';
   import { age, size } from './format';
-  import { localFiles, localTarget } from './local-files.svelte';
+  import { isPattern, localFiles, localTarget } from './local-files.svelte';
 
   /** Section « Fichiers locaux » : favoris et récents ; un motif se déplie sur ses fichiers. */
   let { filter = '' }: { filter?: string } = $props();
@@ -19,13 +19,42 @@
   const newTab = (e: MouseEvent | KeyboardEvent) => e.ctrlKey || e.metaKey || ('button' in e && e.button === 1);
   const patternTarget = (path: string) => ({ connectionId: LOCAL_CONNECTION, path: [path] });
   const selected = (path: string, file?: string) => activeKey === targetKey(localTarget(path, { file }));
+
+  // Saisie d'un motif (`C:\app\logs\app-*.log`) : la boîte « Ouvrir » ne choisit que des fichiers.
+  let patternOpen = $state(false);
+  let patternText = $state('');
+  const patternValid = $derived(isPattern(patternText.trim()) && /^([a-zA-Z]:[\\/]|[\\/])/.test(patternText.trim()));
+
+  function openPattern(event: SubmitEvent) {
+    event.preventDefault();
+    if (!patternValid) return;
+    localFiles.open(patternText.trim(), tabs.tabs().length > 0);
+    patternText = '';
+    patternOpen = false;
+  }
 </script>
 
 <section aria-label="Fichiers locaux" class="mb-2 border-b border-slate-200 pb-2 dark:border-slate-800">
   <div class="flex items-center px-3 pt-1 pb-0.5">
     <h2 class="flex-1 text-xs font-semibold tracking-wide text-slate-500 uppercase">📄 Fichiers locaux</h2>
+    <button type="button" class="mr-2 text-xs text-sky-600 hover:underline" title="Suivre une famille de fichiers (app-*.log) : le plus récent, avec bascule à la rotation" onclick={() => (patternOpen = !patternOpen)}>Motif…</button>
     <button type="button" class="text-xs text-sky-600 hover:underline" title="Ouvrir un fichier de logs (Ctrl+O)" onclick={() => localFiles.pick()}>Ouvrir…</button>
   </div>
+  {#if patternOpen}
+    <form class="flex items-center gap-1 px-2 pb-1" onsubmit={openPattern}>
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        class="input min-w-0 flex-1 py-0.5 font-mono text-xs"
+        placeholder="C:\app\logs\app-*.log"
+        aria-label="Motif de fichiers"
+        title="Chemin complet ; jokers * ? [0-9] dans le nom du fichier seulement"
+        autofocus
+        bind:value={patternText}
+        onkeydown={(e) => e.key === 'Escape' && (patternOpen = false)}
+      />
+      <button type="submit" class="btn py-0.5 text-xs" disabled={!patternValid}>Suivre</button>
+    </form>
+  {/if}
   {#if !localFiles.list.length}
     <p class="px-3 text-xs text-slate-400">Ctrl+O, ou glissez des fichiers de logs sur la fenêtre.</p>
   {/if}

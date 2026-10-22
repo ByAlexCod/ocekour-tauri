@@ -94,3 +94,40 @@ jobs:
           name: Ocekour-${{ env.VERSION }}
           path: package/
           if-no-files-found: error
+
+  # Sonde et mode sans interface pour Linux : binaire statique (musl), sans aucune dépendance,
+  # à copier tel quel sur un serveur (RHEL, Debian, Alpine…).
+  linux:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - name: musl-gcc (ring)
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: ocekour-headless (statique)
+        run: cargo build --release -p ocekour-headless --target x86_64-unknown-linux-musl
+        env:
+          OCEKOUR_RELEASE: '1'
+          LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
+      - name: Vérification (statique, démarre)
+        run: |
+          BIN=target/x86_64-unknown-linux-musl/release/ocekour-headless
+          file "$BIN" | grep -q 'static'
+          "$BIN" --version
+          "$BIN" sonde init --dossier="$RUNNER_TEMP/sonde" --ecoute=127.0.0.1:0 --nom=ci
+      - name: Paquet
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          mkdir -p package
+          cp target/x86_64-unknown-linux-musl/release/ocekour-headless package/
+          cp docs/guide/sonde.md package/ 2>/dev/null || true
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ocekour-headless-linux-x86_64-${{ env.VERSION }}
+          path: package/
+          if-no-files-found: error

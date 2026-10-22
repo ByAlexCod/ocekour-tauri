@@ -1,6 +1,6 @@
 # Ocekour — Guide utilisateur
 
-> **Version 1.3.1** · Documentation versionnée avec le code (`docs/guide/` du dépôt).
+> **Version 2.2.0** · Documentation versionnée avec le code (`docs/guide/` du dépôt).
 > Historique des versions : [CHANGELOG.md](CHANGELOG.md).
 
 Ocekour est une visionneuse de logs **locale** pour Windows 10/11. C'est un seul exécutable
@@ -11,6 +11,8 @@ portable, sans installation. Elle lit :
 | **Rancher** (2.5+)  | Les logs des conteneurs Kubernetes, en direct ou en historique                                |
 | **Kafka**           | Les messages des topics (JSON, texte, Avro), en lecture seule et sans groupe de consommateurs |
 | **S3** d'entreprise | Un explorateur de buckets : aperçu, téléchargement, envoi, renommage, suppression             |
+| **Fichiers**        | Les fichiers de logs du poste (fichier ou motif `app-*.log`), comme un pod                    |
+| **Sonde**           | Les logs d'une machine distante (VM, serveur Windows/Linux), exposés par `ocekour-headless`   |
 
 Ocekour est aussi le **hub MCP de vos agents** (Claude Code, Qwen Code, Mistral Vibe…) : un
 seul serveur MCP local leur donne accès à ces sources et à **GitLab, Jira, Confluence et
@@ -38,6 +40,8 @@ chiffrés localement sur le poste (clé dans un fichier à côté des données) 
 14. [Filtres de logs](filtres.md)
 15. [Web & navigateur : outils MCP pour vos agents](web.md)
 16. [Bases de données : analyse en lecture seule](bdd.md)
+17. [Fichiers locaux : lire les logs du poste](fichiers-locaux.md)
+18. [Sonde : les logs d'une machine distante](sonde.md)
 17. [Dépannage et FAQ](depannage.md)
 
 ## En 30 secondes

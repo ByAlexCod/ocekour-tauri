@@ -2,6 +2,28 @@
 
 [← Sommaire](README.md)
 
+## 2.2.0
+
+**Nouveau : sonde, les logs d'une machine distante** ([guide](sonde.md))
+
+- `ocekour-headless sonde` expose en lecture seule les fichiers de logs d'un serveur Windows ou
+  Linux (binaire Linux statique, sans dépendance) : HTTPS, jeton par sonde, certificat épinglé
+  côté poste, plusieurs postes en même temps, reprise après coupure.
+- Nouvelle connexion **Sonde** : sources dans l'arbre, onglets, assemblage, liens de partage,
+  outils MCP.
+- Service Windows ou unité systemd : `sonde service installer`.
+
+## 2.1.0
+
+**Nouveau : fichiers locaux** ([guide](fichiers-locaux.md))
+
+- Ouvrir un fichier de logs du poste : Ctrl+O, glisser-déposer, ligne de commande
+  (`Ocekour.exe C:\logs\app.log`).
+- **Motifs** (`app-*.log`) : suivi du fichier le plus récent, avec bascule à la rotation.
+- Section **Fichiers locaux** (récents, favoris), choix de l'encodage (Windows-1252…).
+- Agents : accès limité aux fichiers déclarés dans **Paramètres → Fichiers pour les agents**
+  (outil `fichiers_lister`).
+
 ## 2.0.0
 
 **Nouvelle base : Rust + Tauri, interface Svelte**

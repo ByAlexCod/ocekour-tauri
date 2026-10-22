@@ -3398,7 +3398,7 @@ dependencies = [
 
 [[package]]
 name = "ocekour"
-version = "2.0.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3419,7 +3419,7 @@ dependencies = [
 
 [[package]]
 name = "ocekour-core"
-version = "2.0.0"
+version = "2.2.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3484,7 +3484,7 @@ dependencies = [
 
 [[package]]
 name = "ocekour-headless"
-version = "2.0.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "log",
