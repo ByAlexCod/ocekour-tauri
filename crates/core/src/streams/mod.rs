@@ -38,7 +38,7 @@ impl StreamState {
     pub fn is_final(self) -> bool { matches!(self, StreamState::Ended | StreamState::Error) }
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum StreamEvent {
     Lines { lines: Vec<LogLine> },

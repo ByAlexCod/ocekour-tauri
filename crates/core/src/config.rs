@@ -15,6 +15,7 @@ pub fn tls_schema() -> S {
     z::object(vec![
         ("insecure", z::boolean().default(json!(false)).describe("Ne vérifie pas le certificat du serveur.")),
         ("caFile", z::string().optional().describe("Certificat d'autorité (.cer / .crt / .pem, DER ou PEM).")),
+        ("fingerprint", z::string().optional().describe("Empreinte SHA-256 du certificat attendu (épinglé) : SHA256:AB:CD:…")),
     ])
 }
 
@@ -65,9 +66,20 @@ pub fn s3_connection_schema() -> S {
     ])
 }
 
+pub fn sonde_connection_schema() -> S {
+    z::object(vec![
+        ("id", z::string().min(1)),
+        ("type", z::literal(json!("sonde"))),
+        ("name", z::string().min(1)),
+        ("url", z::string().url()),
+        ("tls", tls_default()),
+    ])
+}
+
 pub fn connection_schema() -> S {
     z::disc("type", vec![
         ("rancher", rancher_connection_schema()),
+        ("sonde", sonde_connection_schema()),
         ("kafka", kafka_connection_schema()),
         ("s3", s3_connection_schema()),
     ])
@@ -235,6 +247,9 @@ pub struct Tls {
     pub insecure: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ca_file: Option<String>,
+    /// Certificat épinglé par son empreinte (sonde) : seul ce certificat est accepté.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -297,20 +312,30 @@ pub enum Connection {
     Rancher(RancherConnection),
     Kafka(KafkaConnection),
     S3(S3Connection),
+    Sonde(SondeConnection),
+}
+
+/// Sonde distante (le poste s'y connecte ; secret = jeton de la sonde).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SondeConnection {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub tls: Tls,
 }
 
 impl Connection {
     pub fn id(&self) -> &str {
-        match self { Connection::Rancher(c) => &c.id, Connection::Kafka(c) => &c.id, Connection::S3(c) => &c.id }
+        match self { Connection::Rancher(c) => &c.id, Connection::Kafka(c) => &c.id, Connection::S3(c) => &c.id, Connection::Sonde(c) => &c.id }
     }
     pub fn name(&self) -> &str {
-        match self { Connection::Rancher(c) => &c.name, Connection::Kafka(c) => &c.name, Connection::S3(c) => &c.name }
+        match self { Connection::Rancher(c) => &c.name, Connection::Kafka(c) => &c.name, Connection::S3(c) => &c.name, Connection::Sonde(c) => &c.name }
     }
     pub fn kind(&self) -> &'static str {
-        match self { Connection::Rancher(_) => "rancher", Connection::Kafka(_) => "kafka", Connection::S3(_) => "s3" }
+        match self { Connection::Rancher(_) => "rancher", Connection::Kafka(_) => "kafka", Connection::S3(_) => "s3", Connection::Sonde(_) => "sonde" }
     }
     pub fn tls(&self) -> &Tls {
-        match self { Connection::Rancher(c) => &c.tls, Connection::Kafka(c) => &c.tls, Connection::S3(c) => &c.tls }
+        match self { Connection::Rancher(c) => &c.tls, Connection::Kafka(c) => &c.tls, Connection::S3(c) => &c.tls, Connection::Sonde(c) => &c.tls }
     }
     /// URL (Rancher, S3) ou premier broker (Kafka) : messages d'erreur.
     pub fn address(&self) -> String {
@@ -318,6 +343,7 @@ impl Connection {
             Connection::Rancher(c) => c.url.clone(),
             Connection::Kafka(c) => c.brokers.first().cloned().unwrap_or_default(),
             Connection::S3(c) => c.url.clone(),
+            Connection::Sonde(c) => c.url.clone(),
         }
     }
 }
@@ -512,7 +538,7 @@ pub struct Parsed {
     pub config: AppConfig,
 }
 
-fn issue_path(issue: &Issue) -> Vec<P> {
+pub(crate) fn issue_path(issue: &Issue) -> Vec<P> {
     issue.path.iter().map(|s| match s { Seg::Key(k) => P::K(k.clone()), Seg::Index(i) => P::I(*i) }).collect()
 }
 

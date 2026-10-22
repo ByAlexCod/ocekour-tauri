@@ -116,6 +116,9 @@ async fn dispatch(app: &Arc<App>, caller: &Caller, channel: &str, args: &[Value]
         "connections:delete" => { app.connections.delete(&non_empty(args, 0, "id")?).map_err(e)?; Ok(Value::Null) }
         "connections:hasSecret" => Ok(json!(app.connections.has_secret(&non_empty(args, 0, "id")?))),
         "connections:readCaFile" => to_value(crate::net::ca_file_info(&non_empty(args, 0, "chemin")?).map_err(|e| e.message)?),
+        // --- Sonde : empreinte du certificat au premier contact ---------------------------------
+        "sonde:fingerprint" => outcome(crate::sonde::client::fetch_fingerprint(&string(args, 0, "url", 2_000)?).await),
+
         // --- Fichiers du poste ------------------------------------------------------------------
         "files:list" => to_value(app.files.list()),
         "files:pick" => {

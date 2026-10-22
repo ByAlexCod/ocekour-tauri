@@ -5,6 +5,7 @@
 //!   ocekour-headless --notify                      notifications seules
 //!   ocekour-headless cle init|generer|lire …       clés d'activation (administration)
 //!   ocekour-headless fake-rancher [--port N]       faux Rancher de démonstration
+//!   ocekour-headless sonde …                       sonde : expose des logs aux postes (sonde --help)
 //!
 //! Option commune : --data-dir=<dossier> (sinon OCEKOUR_DATA_DIR, sinon %APPDATA%\Ocekour).
 
@@ -14,7 +15,7 @@ use ocekour_core::app::{App, AppOptions};
 use ocekour_core::headless::{data_dir, parse_mode, run};
 use std::sync::Arc;
 
-const USAGE: &str = "Usage : ocekour-headless --mcp | --mcp-http [--mcp-port=N] | --notify | cle init|generer|lire | fake-rancher [--port N]
+const USAGE: &str = "Usage : ocekour-headless --mcp | --mcp-http [--mcp-port=N] | --notify | sonde … | cle init|generer|lire | fake-rancher [--port N]
 Options : --data-dir=<dossier>, --version";
 
 fn main() {
@@ -27,6 +28,7 @@ fn main() {
                 0
             }
             Some("cle") => cle::main(&args[1..]),
+            Some("sonde") => ocekour_core::sonde::cli::main(&args[1..]).await,
             Some("fake-rancher") => fake_rancher(&args[1..]).await,
             _ => {
                 let Some(mode) = parse_mode(&args) else {

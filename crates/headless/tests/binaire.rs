@@ -96,3 +96,85 @@ fn serveur_mcp_http() {
     assert!(response.starts_with("HTTP/1.1 200") && response.contains("\"result\":{}"), "{response}");
     drop(child);
 }
+
+/// Valeur d'une ligne « Libellé : valeur » de la sortie de `sonde init`.
+fn field(text: &str, label: &str) -> String {
+    text.lines().find_map(|l| l.trim().strip_prefix(label).map(|v| v.trim_start_matches([' ', ':']).trim().to_string())).unwrap_or_else(|| panic!("{label} absent : {text}"))
+}
+
+#[test]
+fn sonde_init_verifier_demarrer_statut() {
+    let dir = tempfile::tempdir().unwrap();
+    let sonde = dir.path().join("sonde");
+    let logs = dir.path().join("logs");
+    std::fs::create_dir(&logs).unwrap();
+    std::fs::write(logs.join("app.log"), "première\nseconde\n").unwrap();
+    let out = bin().args(["sonde", "init", &format!("--dossier={}", sonde.display()), "--ecoute=127.0.0.1:0", "--nom=srv-bin"]).output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(out.status.success(), "{text}{}", String::from_utf8_lossy(&out.stderr));
+    let (fingerprint, token) = (field(&text, "Empreinte"), field(&text, "Jeton"));
+    assert!(fingerprint.starts_with("SHA256:") && token.starts_with("osk_"), "{text}");
+    let config = sonde.join("sonde.yaml");
+    let yaml = std::fs::read_to_string(&config).unwrap().replace("sources: []", &format!("sources:\n  - id: app\n    fichier: {}\n  - id: absente\n    fichier: {}", logs.join("app.log").display(), logs.join("absent.log").display()));
+    std::fs::write(&config, yaml).unwrap();
+    let cfg = format!("--config={}", config.display());
+
+    // verifier : une source absente → code 1, état lisible.
+    let out = bin().args(["sonde", "verifier", &cfg]).output().unwrap();
+    let report = String::from_utf8_lossy(&out.stdout).to_string();
+    assert_eq!(out.status.code(), Some(1), "{report}");
+    assert!(report.contains(&format!("Empreinte du certificat : {fingerprint}")) && report.contains("OK   app") && report.contains("absent"), "{report}");
+
+    // Port libre choisi par le système : on le fixe dans sonde.yaml.
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let yaml = std::fs::read_to_string(&config).unwrap().replace("ecoute: 127.0.0.1:0", &format!("ecoute: 127.0.0.1:{port}"));
+    std::fs::write(&config, yaml).unwrap();
+    let child = bin().args(["sonde", &cfg]).stderr(Stdio::piped()).stdout(Stdio::null()).spawn().unwrap();
+    let mut child = Killed(child);
+    let mut err = BufReader::new(child.0.stderr.take().unwrap());
+    let mut seen = String::new();
+    while !seen.contains("Sonde démarrée") {
+        let mut line = String::new();
+        assert!(err.read_line(&mut line).unwrap() > 0, "{seen}");
+        seen.push_str(&line);
+    }
+
+    // Un poste se connecte avec le jeton et l'empreinte.
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let c = ocekour_core::config::SondeConnection {
+        id: "s".into(), name: "s".into(), url: format!("https://127.0.0.1:{port}"),
+        tls: ocekour_core::config::Tls { insecure: false, ca_file: None, fingerprint: Some(fingerprint.clone()) },
+    };
+    let summary = runtime.block_on(ocekour_core::sonde::client::test(&c, &token)).unwrap();
+    assert!(summary.contains("srv-bin") && summary.contains("2 source(s)"), "{summary}");
+
+    // statut : la sonde écrit son état (aucun abonné ici).
+    let started = Instant::now();
+    loop {
+        let out = bin().args(["sonde", "statut", &cfg]).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        if out.status.success() && text.contains("srv-bin") {
+            assert!(text.contains("0 abonnement(s)"), "{text}");
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(10), "{text}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // Nouveau jeton : l'ancien est refusé par la sonde en marche (rechargement à chaud).
+    let out = bin().args(["sonde", "jeton", "renouveler", &cfg]).output().unwrap();
+    let new_token = String::from_utf8_lossy(&out.stdout).lines().last().unwrap().trim().to_string();
+    assert!(new_token.starts_with("osk_"));
+    let started = Instant::now();
+    while runtime.block_on(ocekour_core::sonde::client::test(&c, &token)).is_ok() {
+        assert!(started.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(runtime.block_on(ocekour_core::sonde::client::test(&c, &new_token)).is_ok());
+    let mut rest = String::new();
+    let _ = child.0.kill();
+    let _ = err.read_to_string(&mut rest);
+    // L'usage s'affiche, et une commande inconnue échoue.
+    assert_eq!(bin().args(["sonde", "inconnue"]).output().unwrap().status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&bin().args(["sonde", "--help"]).output().unwrap().stdout).contains("sonde init"));
+}

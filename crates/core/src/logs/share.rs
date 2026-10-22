@@ -61,6 +61,18 @@ pub fn link_schema() -> S {
             ]),
         ),
         (
+            "sonde",
+            z::object(vec![
+                ("v", z::literal(json!(1))),
+                ("t", z::literal(json!("sonde"))),
+                ("url", z::string().url()),
+                ("source", name()),
+                ("file", name().optional()),
+                ("options", options()),
+                ("filters", filters().optional()),
+            ]),
+        ),
+        (
             "s3",
             z::object(vec![
                 ("v", z::literal(json!(1))),
@@ -116,10 +128,19 @@ pub fn find_connection<'a>(link: &Value, connections: &'a [Connection]) -> Optio
             connections.iter().find(|c| match (t, c) {
                 ("rancher", Connection::Rancher(r)) => normalize_url(&r.url) == url,
                 ("s3", Connection::S3(s)) => normalize_url(&s.url) == url,
+                ("sonde", Connection::Sonde(s)) => normalize_url(&s.url) == url,
                 _ => false,
             })
         }
     }
+}
+
+/// Lien vers une source de sonde (et un fichier d'un motif).
+pub fn link_for_sonde(url: &str, source: &str, file: Option<&str>, options: Value, filters: Option<Value>) -> Value {
+    let mut link = json!({ "v": 1, "t": "sonde", "url": url.trim_end_matches('/'), "source": source, "options": options });
+    if let Some(f) = file { link["file"] = json!(f); }
+    if let Some(f) = filters { link["filters"] = f; }
+    link
 }
 
 /// Lien d'une vue : conteneur Rancher, topic Kafka ou dossier S3.

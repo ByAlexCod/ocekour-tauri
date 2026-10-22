@@ -51,6 +51,11 @@ pub fn main() -> i32 {
         println!("Ocekour {VERSION}");
         return 0;
     }
+    if args.first().map(String::as_str) == Some("sonde") {
+        attach_console();
+        let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime tokio");
+        return runtime.block_on(ocekour_core::sonde::cli::main(&args[1..]));
+    }
     let dir = headless::data_dir(&args);
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime tokio");
 

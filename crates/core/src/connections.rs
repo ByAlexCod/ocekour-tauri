@@ -27,12 +27,13 @@ fn missing_secret(kind: &str) -> &'static str {
         "rancher" => "Aucun token enregistré",
         "kafka" => "Aucun mot de passe enregistré",
         "s3" => "Aucune clé secrète enregistrée",
+        "sonde" => "Aucun jeton de sonde enregistré",
         _ => "Aucun secret enregistré",
     }
 }
 
 fn secret_label(kind: &str) -> &'static str {
-    match kind { "rancher" => "Token", "kafka" => "Mot de passe", _ => "Clé secrète" }
+    match kind { "rancher" => "Token", "kafka" => "Mot de passe", "sonde" => "Jeton de la sonde", _ => "Clé secrète" }
 }
 
 /// Brouillon de la fenêtre de connexion : une connexion (schéma de config.yaml) avec un
@@ -60,7 +61,12 @@ pub fn parse_draft(input: &Value, for_test: bool) -> Result<(Connection, Option<
 /// Forme écrite dans config.yaml : `caFile` seulement s'il sert ; `Null` = clé retirée.
 pub fn normalize(connection: &Connection) -> Map<String, Value> {
     let tls = |t: &crate::config::Tls| {
-        if t.ca_file.is_some() && !t.insecure { serde_json::to_value(t).unwrap() } else { json!({ "insecure": t.insecure }) }
+        let mut v = json!({ "insecure": t.insecure });
+        if !t.insecure {
+            if let Some(ca) = &t.ca_file { v["caFile"] = json!(ca); }
+            if let Some(fp) = &t.fingerprint { v["fingerprint"] = json!(fp); }
+        }
+        v
     };
     let mut record = serde_json::to_value(connection).unwrap().as_object().cloned().unwrap();
     // Ordre du schéma : id, type, puis les champs.
@@ -83,6 +89,7 @@ pub fn normalize(connection: &Connection) -> Map<String, Value> {
             });
         }
         Connection::Rancher(r) => { out.insert("url".into(), json!(r.url.trim_end_matches('/'))); }
+        Connection::Sonde(s) => { out.insert("url".into(), json!(s.url.trim_end_matches('/'))); }
         Connection::S3(s) => {
             out.insert("url".into(), json!(s.url.trim_end_matches('/')));
             out.insert("region".into(), s.region.clone().filter(|r| !r.is_empty()).map(Value::String).unwrap_or(Value::Null));
@@ -95,6 +102,7 @@ fn connection_schema_fields(kind: &str) -> Vec<String> {
     let schema = match kind {
         "rancher" => crate::config::rancher_connection_schema(),
         "kafka" => crate::config::kafka_connection_schema(),
+        "sonde" => crate::config::sonde_connection_schema(),
         _ => crate::config::s3_connection_schema(),
     };
     schema.fields().iter().map(|(k, _)| k.clone()).collect()
@@ -273,6 +281,7 @@ pub async fn test_connection(connection: &Connection, secret: &str) -> Result<St
         }
         Connection::Kafka(k) => crate::kafka::test(k, secret).await,
         Connection::S3(s) => crate::s3::test(s, secret).await,
+        Connection::Sonde(s) => crate::sonde::client::test(s, secret).await,
     }
 }
 

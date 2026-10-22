@@ -23,6 +23,7 @@ pub async fn browse(connections: &Connections, connection_id: &str, path: &[Stri
             if !path.is_empty() { return Ok(vec![]); }
             crate::s3::list_buckets(&s, &connections.secret(connection_id)?).await
         }
+        Connection::Sonde(s) => crate::sonde::client::browse(&s, &connections.secret(connection_id)?, path).await,
     }
 }
 

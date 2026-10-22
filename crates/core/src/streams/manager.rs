@@ -90,6 +90,9 @@ impl StreamManager {
                 super::kafka::spawn(k.clone(), self.connections.secret(connection_id)?, path[0].clone(), options.clone(), emit, self.timing.clone(), cancel.clone());
             }
             Connection::S3(_) => return Err(SourceError::invalid(format!("{} : pas de flux de logs.", connection.name()))),
+            Connection::Sonde(s) => {
+                crate::sonde::client::spawn(s.clone(), self.connections.secret(connection_id)?, path, options.clone(), emit, self.timing.clone(), cancel.clone())?;
+            }
         }
         Ok(self.register(id, cancel, owner, label, kind, &options))
     }

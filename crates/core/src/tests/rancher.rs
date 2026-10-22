@@ -30,7 +30,7 @@ async fn setup() -> Ctx {
 
 impl Ctx {
     fn target(&self) -> RancherTarget {
-        RancherTarget { url: self.rancher.url.clone(), tls: Tls { insecure: false, ca_file: Some(self.pem.clone()) }, token: FAKE_TOKEN.into() }
+        RancherTarget { url: self.rancher.url.clone(), tls: Tls { insecure: false, ca_file: Some(self.pem.clone()), fingerprint: None }, token: FAKE_TOKEN.into() }
     }
 }
 
@@ -38,9 +38,9 @@ impl Ctx {
 async fn client_rancher() {
     let c = setup().await;
     assert_eq!(rancher::test_connection(&c.target()).await.unwrap(), "jdupont");
-    let der = RancherTarget { tls: Tls { insecure: false, ca_file: Some(c.der.clone()) }, ..c.target() };
+    let der = RancherTarget { tls: Tls { insecure: false, ca_file: Some(c.der.clone()), fingerprint: None }, ..c.target() };
     assert_eq!(rancher::test_connection(&der).await.unwrap(), "jdupont");
-    let insecure = RancherTarget { tls: Tls { insecure: true, ca_file: None }, ..c.target() };
+    let insecure = RancherTarget { tls: Tls { insecure: true, ca_file: None, fingerprint: None }, ..c.target() };
     assert!(rancher::test_connection(&insecure).await.is_ok());
     let unknown = RancherTarget { tls: Tls::default(), ..c.target() };
     let e = rancher::test_connection(&unknown).await.unwrap_err();
@@ -78,7 +78,7 @@ async fn parcours() {
     ]);
     assert_eq!(rancher::browse(&t, &s(&["local"])).await.unwrap_err().code, ErrorCode::Forbidden);
     assert_eq!(rancher::browse(&t, &s(&["c-prod1", "inconnu"])).await.unwrap_err().code, ErrorCode::Http);
-    let bad = RancherTarget { token: "x".into(), tls: Tls { insecure: true, ca_file: None }, ..t.clone() };
+    let bad = RancherTarget { token: "x".into(), tls: Tls { insecure: true, ca_file: None, fingerprint: None }, ..t.clone() };
     assert_eq!(rancher::browse(&bad, &s(&["c-prod1"])).await.unwrap_err().code, ErrorCode::Unauthorized);
     let no_ca = RancherTarget { tls: Tls::default(), ..t };
     assert_eq!(rancher::browse(&no_ca, &s(&["c-prod1"])).await.unwrap_err().code, ErrorCode::Tls);
@@ -104,7 +104,7 @@ async fn run(c: &Ctx, pod: &str, container: &str, workload: Option<&str>, option
     let events = Arc::new(Mutex::new(Vec::<StreamEvent>::new()));
     let sink = events.clone();
     let cancel = tokio_util::sync::CancellationToken::new();
-    let target = RancherTarget { url: c.rancher.url.clone(), tls: Tls { insecure: true, ca_file: None }, token: token.into() };
+    let target = RancherTarget { url: c.rancher.url.clone(), tls: Tls { insecure: true, ca_file: None, fingerprint: None }, token: token.into() };
     let r = ContainerRef { cluster_id: "c-prod1".into(), namespace: "app-commandes".into(), pod: pod.into(), container: container.into(), workload: workload.map(str::to_string) };
     let timing = Timing { batch: Duration::from_millis(10), batch_lines: 500, retry_delays: vec![Duration::from_millis(20), Duration::from_millis(50)], idle_timeout: Duration::from_secs(5) };
     let handle = spawn(target, r, options, Arc::new(move |e| sink.lock().push(e)), timing, cancel.clone());

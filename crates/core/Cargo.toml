@@ -8,7 +8,7 @@ description = "Cœur d'Ocekour : sources, flux, S3, MCP, services — indépenda
 [features]
 default = []
 # Faux serveurs (Rancher, services) : tests et démonstrations.
-testing = ["dep:rcgen"]
+testing = []
 
 [dependencies]
 tokio = { workspace = true }
@@ -64,11 +64,12 @@ unicode-normalization = "0.1"
 toml_edit = "0.23"
 crc32c = "0.6"
 encoding_rs = "0.8"
-rcgen = { version = "0.14", optional = true }
+rcgen = "0.14"
 tokio-stream = "0.1"
 tokio-postgres-rustls = "0.13"
 
 [target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
 windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation", "Win32_System_Memory", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]

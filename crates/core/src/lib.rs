@@ -20,6 +20,7 @@ pub mod s3;
 pub mod schema;
 pub mod secrets;
 pub mod settings;
+pub mod sonde;
 pub mod text;
 pub mod yaml;
 pub mod streams;

@@ -10,5 +10,6 @@ mod s3;
 mod mcp;
 mod notifications;
 mod services;
+mod sonde;
 mod support;
 mod web;

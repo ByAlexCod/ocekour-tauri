@@ -345,6 +345,7 @@ pub fn core_tools() -> Vec<Tool> {
             let chemin = match link["t"].as_str() {
                 Some("rancher") => json!([link["clusterId"], link["namespace"], link["pod"], link["container"]]),
                 Some("kafka") => json!([link["topic"]]),
+                Some("sonde") => if link["file"].is_string() { json!([link["source"], link["file"]]) } else { json!([link["source"]]) },
                 _ => json!([link["bucket"]]),
             };
             Ok(ok(obj! {
@@ -380,6 +381,7 @@ pub fn core_tools() -> Vec<Tool> {
                 }
                 Connection::Kafka(k) => share::link_for_topic(&k.brokers, &chemin[0], options, filters),
                 Connection::S3(s) => share::link_for_bucket(&s.url, &chemin[0], &a.string("prefixe")),
+                Connection::Sonde(s) => share::link_for_sonde(&s.url, &chemin[0], chemin.get(1).map(String::as_str), options, filters),
             };
             Ok(ok(share::encode(&link)))
         }));

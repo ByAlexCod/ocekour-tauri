@@ -227,7 +227,7 @@ impl Analytics {
 /// POST du lot vers `<url>/matomo.php`.
 async fn post(target: &Target, body: String) -> anyhow::Result<()> {
     let url = crate::rancher::join(&target.url, "matomo.php")?;
-    let client = crate::net::http_client(&Tls { insecure: target.insecure, ca_file: None })?;
+    let client = crate::net::http_client(&Tls { insecure: target.insecure, ca_file: None, fingerprint: None })?;
     let res = client.post(url).header("content-type", "application/json").body(body).timeout(Duration::from_secs(10)).send().await?;
     if res.status().as_u16() >= 300 { anyhow::bail!("Matomo : HTTP {}", res.status().as_u16()); }
     Ok(())

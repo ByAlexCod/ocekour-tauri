@@ -94,6 +94,7 @@ pub async fn profile_key_of(app: &App, connection: &Connection, path: &[String])
             format!("{cluster}/{namespace}/{}", workload.unwrap_or(pod))
         }
         Connection::S3(_) => String::new(),
+        Connection::Sonde(s) => format!("sonde/{}/{}", s.name, path.first().cloned().unwrap_or_default()),
     }
 }
 

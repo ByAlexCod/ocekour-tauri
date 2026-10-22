@@ -137,6 +137,29 @@ impl ServerCertVerifier for Pinned {
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> { self.inner.supported_verify_schemes() }
 }
 
+/// Certificat épinglé par son empreinte SHA-256 (sonde) : seul ce certificat est accepté,
+/// quel que soit le nom d'hôte ou l'autorité (certificat auto-signé de la sonde).
+#[derive(Debug)]
+struct Fingerprint {
+    expected: String,
+    provider: Arc<rustls::crypto::CryptoProvider>,
+}
+
+impl ServerCertVerifier for Fingerprint {
+    fn verify_server_cert(&self, end: &CertificateDer<'_>, _: &[CertificateDer<'_>], _: &ServerName<'_>, _: &[u8], _: UnixTime) -> Result<ServerCertVerified, rustls::Error> {
+        let actual = crate::sonde::config::fingerprint(end.as_ref());
+        if actual == self.expected { return Ok(ServerCertVerified::assertion()); }
+        Err(rustls::Error::General(format!("le certificat présenté ({actual}) n'est pas celui qui a été approuvé ({}) : vérifiez auprès de l'administrateur, puis approuvez le nouveau certificat dans la connexion", self.expected)))
+    }
+    fn verify_tls12_signature(&self, message: &[u8], cert: &CertificateDer<'_>, dss: &DigitallySignedStruct) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
+    }
+    fn verify_tls13_signature(&self, message: &[u8], cert: &CertificateDer<'_>, dss: &DigitallySignedStruct) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
+    }
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> { self.provider.signature_verification_algorithms.supported_schemes() }
+}
+
 /// Configuration rustls d'une connexion.
 pub fn rustls_config(tls: &Tls) -> Result<ClientConfig, SourceError> {
     let builder = ClientConfig::builder_with_provider(provider())
@@ -144,6 +167,10 @@ pub fn rustls_config(tls: &Tls) -> Result<ClientConfig, SourceError> {
         .map_err(|e| SourceError::new(ErrorCode::Tls, e.to_string()))?;
     if tls.insecure {
         return Ok(builder.dangerous().with_custom_certificate_verifier(Arc::new(NoVerify(provider()))).with_no_client_auth());
+    }
+    if let Some(fp) = &tls.fingerprint {
+        let expected = crate::sonde::config::normalize_fingerprint(fp).ok_or_else(|| SourceError::new(ErrorCode::Tls, "Empreinte de certificat invalide (SHA256:AB:CD:…)."))?;
+        return Ok(builder.dangerous().with_custom_certificate_verifier(Arc::new(Fingerprint { expected, provider: provider() })).with_no_client_auth());
     }
     let pinned = match &tls.ca_file { Some(f) => read_ca_certs(f)?, None => vec![] };
     let inner = rustls::client::WebPkiServerVerifier::builder_with_provider(Arc::new(root_store(tls)?), provider())
@@ -154,9 +181,9 @@ pub fn rustls_config(tls: &Tls) -> Result<ClientConfig, SourceError> {
 
 /// Client HTTP(S) pour ces réglages TLS (mis en cache). Aucun proxy (comme Ocekour 1.x).
 pub fn http_client(tls: &Tls) -> Result<reqwest::Client, SourceError> {
-    static CACHE: once_cell::sync::Lazy<Mutex<HashMap<(bool, Option<String>), reqwest::Client>>> =
+    static CACHE: once_cell::sync::Lazy<Mutex<HashMap<(bool, Option<String>, Option<String>), reqwest::Client>>> =
         once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
-    let key = (tls.insecure, if tls.insecure { None } else { tls.ca_file.clone() });
+    let key = (tls.insecure, if tls.insecure { None } else { tls.ca_file.clone() }, if tls.insecure { None } else { tls.fingerprint.clone() });
     if let Some(c) = CACHE.lock().get(&key) { return Ok(c.clone()); }
     let mut config = rustls_config(tls)?;
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
@@ -205,6 +232,9 @@ pub fn classify(e: &(dyn std::error::Error + 'static), url: &str) -> SourceError
     let host = host_of(url);
     for cause in chain(e) {
         if let Some(se) = cause.downcast_ref::<SourceError>() { return se.clone(); }
+        if let Some(rustls::Error::General(m)) = cause.downcast_ref::<rustls::Error>() {
+            return SourceError::new(ErrorCode::Tls, format!("{host} : {m}"));
+        }
         if let Some(t) = cause.downcast_ref::<rustls::Error>() {
             let code = tls_code(t).unwrap_or("TLS");
             return SourceError::new(
@@ -235,6 +265,10 @@ pub fn classify(e: &(dyn std::error::Error + 'static), url: &str) -> SourceError
             }
         }
         let text = cause.to_string();
+        if let Some(i) = text.find("le certificat présenté") {
+            // Certificat épinglé (sonde) différent : message explicite.
+            return SourceError::new(ErrorCode::Tls, format!("{host} : {}", &text[i..]));
+        }
         if text.contains("invalid peer certificate") {
             let code = if text.contains("UnknownIssuer") {
                 "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
@@ -319,7 +353,7 @@ mod tests {
 
     #[test]
     fn configs() {
-        assert!(rustls_config(&Tls { insecure: true, ca_file: None }).is_ok());
+        assert!(rustls_config(&Tls { insecure: true, ca_file: None, fingerprint: None }).is_ok());
         assert!(rustls_config(&Tls::default()).is_ok());
         assert!(http_client(&Tls::default()).is_ok());
     }
