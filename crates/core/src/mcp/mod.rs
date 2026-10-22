@@ -88,6 +88,8 @@ pub struct Tool {
     pub needs_licence: bool,
     pub visibility: Visibility,
     pub run: Run,
+    /// Un code a été fourni (`run`) : sinon l'outil répond « non implémenté ».
+    pub implemented: bool,
 }
 
 /// Déclaration d'un outil.
@@ -102,6 +104,7 @@ pub fn tool(name: &str, title: &str, description: &str) -> Tool {
         needs_licence: true,
         visibility: Visibility::Always,
         run: Arc::new(|_, _, _| Box::pin(async { Ok(fail("non implémenté")) })),
+        implemented: false,
     }
 }
 
@@ -120,6 +123,7 @@ impl Tool {
         Fut: Future<Output = anyhow::Result<Content>> + Send + 'static,
     {
         self.run = Arc::new(move |app, args, call| Box::pin(f(app, args, call)));
+        self.implemented = true;
         self
     }
 

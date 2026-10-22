@@ -198,3 +198,18 @@ async fn transport_stdio() {
     drop(lines);
     tokio::time::timeout(std::time::Duration::from_secs(5), server).await.unwrap().unwrap().unwrap();
 }
+
+/// Chaque outil déclaré a son code (aucun ne répond « non implémenté »), noms uniques.
+#[test]
+fn tous_les_outils_sont_implementes() {
+    let tools = crate::mcp::tools::all();
+    let missing: Vec<_> = tools.iter().filter(|t| !t.implemented).map(|t| t.name.as_str()).collect();
+    assert!(missing.is_empty(), "outils sans code : {missing:?}");
+    let mut names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
+    names.sort();
+    let count = names.len();
+    names.dedup();
+    assert_eq!(names.len(), count, "noms d'outils en double");
+    assert_eq!(count, 94, "{names:?}");
+}
+
