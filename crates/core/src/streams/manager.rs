@@ -36,10 +36,14 @@ impl StreamManager {
             return Err(SourceError::invalid("Chemin de flux invalide."));
         }
         if options.since_seconds == Some(0) { return Err(SourceError::invalid("sinceSeconds doit être ≥ 1.")); }
-        let connection = self.connections.get(connection_id)?;
+        let local = connection_id == crate::files::LOCAL;
+        let connection = if local { None } else { Some(self.connections.get(connection_id)?) };
         let id = uuid::Uuid::new_v4().to_string();
-        let kind = connection.kind();
-        let label = format!("{} › {}", connection.name(), path.iter().take(4).cloned().collect::<Vec<_>>().join("/"));
+        let kind = connection.as_ref().map(|c| c.kind()).unwrap_or("fichier");
+        let label = match &connection {
+            Some(c) => format!("{} › {}", c.name(), path.iter().take(4).cloned().collect::<Vec<_>>().join("/")),
+            None => format!("Fichier › {}", path.join(" › ")),
+        };
         let emit: Emit = {
             let (id, label) = (id.clone(), label.clone());
             Arc::new(move |event: StreamEvent| {
@@ -56,6 +60,22 @@ impl StreamManager {
             })
         };
         let cancel = CancellationToken::new();
+        let encoding = match options.encoding.as_deref() {
+            None | Some("") | Some("auto") => None,
+            Some(e) => Some(super::encoding::Encoding::parse(e).ok_or_else(|| SourceError::invalid(format!("Encodage inconnu : {e}")))?),
+        };
+        let Some(connection) = connection else {
+            let target = crate::files::target_of(path)?;
+            let file_options = super::file::FileOptions {
+                follow: options.follow,
+                tail_lines: options.tail_lines,
+                since_seconds: options.since_seconds,
+                encoding,
+                resume: None,
+            };
+            spawn_file(target, file_options, emit, cancel.clone());
+            return Ok(self.register(id, cancel, owner, label, kind, &options));
+        };
         match &connection {
             Connection::Rancher(_) => {
                 if path.len() < 4 { return Err(SourceError::invalid("Chemin Rancher incomplet : cluster, namespace, pod, conteneur.")); }
@@ -71,7 +91,11 @@ impl StreamManager {
             }
             Connection::S3(_) => return Err(SourceError::invalid(format!("{} : pas de flux de logs.", connection.name()))),
         }
-        log::info!("Flux {label} ouvert {}", serde_json::to_string(&options).unwrap_or_default());
+        Ok(self.register(id, cancel, owner, label, kind, &options))
+    }
+
+    fn register(&self, id: String, cancel: CancellationToken, owner: &str, label: String, kind: &str, options: &StreamOptions) -> String {
+        log::info!("Flux {label} ouvert {}", serde_json::to_string(options).unwrap_or_default());
         let mut event = AnalyticsEvent::new(
             "Flux",
             "Ouvert",
@@ -80,7 +104,7 @@ impl StreamManager {
         if let Some(t) = options.tail_lines { event = event.value(t as f64); }
         track(event);
         self.streams.lock().insert(id.clone(), Entry { cancel, owner: owner.into(), label });
-        Ok(id)
+        id
     }
 
     pub fn close(&self, id: &str) {
@@ -97,4 +121,13 @@ impl StreamManager {
     }
 
     pub fn count(&self) -> usize { self.streams.lock().len() }
+}
+
+/// Fichier (du poste) : la lecture tourne dans un fil dédié, ses événements partent vers `emit`.
+pub fn spawn_file(target: super::file::FileTarget, options: super::file::FileOptions, emit: Emit, cancel: CancellationToken) {
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+    super::file::spawn(target, options, super::file::FileTiming::default(), cancel, tx);
+    tokio::spawn(async move {
+        while let Some(e) = rx.recv().await { emit(e.event); }
+    });
 }

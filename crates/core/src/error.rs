@@ -13,6 +13,8 @@ pub enum ErrorCode {
     Timeout,
     NotRancher,
     Http,
+    /// Fichier ou source introuvable.
+    NotFound,
 }
 
 impl ErrorCode {
@@ -26,6 +28,7 @@ impl ErrorCode {
             ErrorCode::Timeout => "timeout",
             ErrorCode::NotRancher => "not-rancher",
             ErrorCode::Http => "http",
+            ErrorCode::NotFound => "not-found",
         }
     }
 }

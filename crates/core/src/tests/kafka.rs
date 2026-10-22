@@ -121,7 +121,7 @@ fn ended(events: &[StreamEvent]) -> bool { events.iter().any(|e| matches!(e, Str
 fn has_lines(events: &[StreamEvent]) -> bool { events.iter().any(|e| matches!(e, StreamEvent::Lines { .. })) }
 
 fn opts(follow: bool, tail: Option<u64>, since: Option<u64>) -> StreamOptions {
-    StreamOptions { follow, tail_lines: tail, since_seconds: since, previous: None }
+    StreamOptions { follow, tail_lines: tail, since_seconds: since, previous: None, encoding: None }
 }
 
 #[tokio::test]

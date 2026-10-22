@@ -12,6 +12,7 @@ pub async fn browse(connections: &Connections, connection_id: &str, path: &[Stri
     if path.len() > 4 || path.iter().any(|p| p.is_empty()) {
         return Err(SourceError::invalid("Chemin de source invalide."));
     }
+    if connection_id == crate::files::LOCAL { return crate::files::browse(path); }
     match connections.get(connection_id)? {
         Connection::Rancher(_) => crate::rancher::browse(&connections.target(connection_id)?, path).await,
         Connection::Kafka(k) => {

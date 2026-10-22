@@ -138,7 +138,7 @@ export interface S3Draft extends DraftBase {
 export type ConnectionDraft = RancherDraft | KafkaDraft | S3Draft;
 
 export type SourceErrorCode =
-  'invalid' | 'unauthorized' | 'forbidden' | 'tls' | 'network' | 'timeout' | 'not-rancher' | 'http';
+  'invalid' | 'unauthorized' | 'forbidden' | 'tls' | 'network' | 'timeout' | 'not-rancher' | 'http' | 'not-found';
 
 export interface SourceErrorInfo {
   code: SourceErrorCode;

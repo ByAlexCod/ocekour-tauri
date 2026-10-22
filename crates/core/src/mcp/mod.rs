@@ -70,6 +70,8 @@ pub enum Visibility {
     Web,
     /// Au moins une base de données configurée.
     Bdd,
+    /// Au moins un fichier du poste ouvert aux agents.
+    Fichiers,
 }
 
 pub type ToolFuture = Pin<Box<dyn Future<Output = anyhow::Result<Content>> + Send>>;
@@ -129,6 +131,7 @@ impl Tool {
             Visibility::Contexte => config.contexte.enabled,
             Visibility::Web => config.web.enabled,
             Visibility::Bdd => !config.databases.is_empty(),
+            Visibility::Fichiers => !config.fichiers.agents.is_empty(),
         }
     }
 

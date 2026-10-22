@@ -8,6 +8,7 @@ pub mod config;
 pub mod connections;
 pub mod contexte;
 pub mod error;
+pub mod files;
 pub mod headless;
 pub mod kafka;
 pub mod licence;

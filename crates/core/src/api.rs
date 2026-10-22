@@ -95,6 +95,7 @@ async fn dispatch(app: &Arc<App>, caller: &Caller, channel: &str, args: &[Value]
         "config:setPreferences" => to_value(crate::settings::set_preferences(config, arg(args, 0)).map_err(e)?),
         "config:setNotifications" => to_value(crate::settings::set_notifications(config, arg(args, 0)).map_err(e)?),
         "config:setContexte" => to_value(crate::settings::set_contexte(config, arg(args, 0)).map_err(e)?),
+        "config:setFichiers" => to_value(crate::settings::set_fichiers(config, arg(args, 0)).map_err(e)?),
         "config:toggleFavorite" => to_value(crate::settings::toggle_favorite(config, &non_empty(args, 0, "favori")?).map_err(e)?),
         "config:editProfile" => to_value(crate::settings::edit_profile(config, &string(args, 0, "match", 1_000)?, arg(args, 1)).map_err(e)?),
         "config:saveFilterPreset" => to_value(crate::settings::save_filter_preset(config, arg(args, 0), arg(args, 1)).map_err(e)?),
@@ -115,6 +116,21 @@ async fn dispatch(app: &Arc<App>, caller: &Caller, channel: &str, args: &[Value]
         "connections:delete" => { app.connections.delete(&non_empty(args, 0, "id")?).map_err(e)?; Ok(Value::Null) }
         "connections:hasSecret" => Ok(json!(app.connections.has_secret(&non_empty(args, 0, "id")?))),
         "connections:readCaFile" => to_value(crate::net::ca_file_info(&non_empty(args, 0, "chemin")?).map_err(|e| e.message)?),
+        // --- Fichiers du poste ------------------------------------------------------------------
+        "files:list" => to_value(app.files.list()),
+        "files:pick" => {
+            let picked = app.ui.open_dialog(OpenOptions {
+                title: "Ouvrir un fichier de logs".into(),
+                filters: vec![FileFilter::new("Logs", &["log", "txt", "out", "err", "json", "ndjson", "jsonl", "gz"]), FileFilter::new("Tous les fichiers", &["*"])],
+                multiple: true,
+                ..Default::default()
+            }).await;
+            Ok(json!(picked.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>()))
+        }
+        "files:touch" => to_value(app.files.touch(&string(args, 0, "chemin", 4_000)?).map_err(|e| e.message)?),
+        "files:favorite" => to_value(app.files.set_favorite(&string(args, 0, "chemin", 4_000)?, arg(args, 1).as_bool().unwrap_or(true)).map_err(|e| e.message)?),
+        "files:forget" => to_value(app.files.forget(&string(args, 0, "chemin", 4_000)?)),
+        "files:setEncoding" => to_value(app.files.set_encoding(&string(args, 0, "chemin", 4_000)?, arg(args, 1).as_str()).map_err(|e| e.message)?),
         "connections:pickCaFile" => {
             let picked = app.ui.open_dialog(OpenOptions { title: "Certificat d'autorité".into(), filters: vec![FileFilter::new("Certificats", &["cer", "crt", "pem"])], ..Default::default() }).await;
             match picked.first() {

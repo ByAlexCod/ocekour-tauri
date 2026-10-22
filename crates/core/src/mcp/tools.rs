@@ -2,7 +2,7 @@
 //! seuls les outils de licence (et l'attente) répondent.
 
 use super::logs::{ReadRequest, read_logs, workload_of};
-use super::{Args, Content, Tool, fail, ok, tool};
+use super::{Args, Content, Tool, Visibility, fail, ok, tool};
 use crate::app::App;
 use crate::config::Connection;
 use crate::logs::parser::Level;
@@ -21,7 +21,7 @@ const LEVELS: [&str; 7] = ["trace", "debug", "info", "warn", "error", "fatal", "
 fn log_input(max: S) -> Vec<(&'static str, S)> {
     vec![
         ("connexion", z::string().describe("Id de la connexion (voir connexions_lister)")),
-        ("chemin", z::array(z::string().min(1)).min(1).max(4).describe("Rancher : [cluster, namespace, pod, conteneur] ; Kafka : [topic]")),
+        ("chemin", z::array(z::string().min(1)).min(1).max(4).describe("Rancher : [cluster, namespace, pod, conteneur] ; Kafka : [topic] ; connexion « local » : [fichier ou motif] ou [motif, fichier] (voir fichiers_lister)")),
         ("lignes", z::int().min(0).max(100_000).optional().describe("N dernières lignes (défaut : 1000)")),
         ("depuis", z::int().min(1).optional().describe("Seulement les N dernières secondes")),
         ("debut", z::boolean().optional().describe("Kafka : tout le topic depuis le début")),
@@ -31,6 +31,7 @@ fn log_input(max: S) -> Vec<(&'static str, S)> {
         ("regex", z::boolean().optional()),
         ("casse", z::boolean().optional().describe("Respecter la casse")),
         ("niveaux", z::array(z::enumeration(&LEVELS)).optional().describe("Niveaux gardés (défaut : tous)")),
+        ("encodage", z::enumeration(&["utf-8", "utf-16le", "utf-16be", "latin-1", "windows-1252"]).optional().describe("Fichier : encodage (défaut : détecté, sinon UTF-8)")),
         ("max", max),
     ]
 }
@@ -66,6 +67,12 @@ fn describe_connection(c: &Connection, has_secret: bool) -> Value {
     Value::Object(m)
 }
 
+/// Fichier du poste : seulement ceux que l'utilisateur a ouverts aux agents.
+fn check_local(app: &App, a: &Value) -> Result<(), crate::error::SourceError> {
+    if a.string("connexion") != crate::files::LOCAL { return Ok(()); }
+    crate::files::agent_allowed(&app.config.config().fichiers.agents, &path_of(a, "chemin"))
+}
+
 fn path_of(a: &Value, key: &str) -> Vec<String> {
     a[key].as_array().map(|v| v.iter().filter_map(|s| s.as_str().map(str::to_string)).collect()).unwrap_or_default()
 }
@@ -80,6 +87,7 @@ fn read_request(a: &Value, default_max: usize) -> ReadRequest {
             tail_lines: if debut { None } else { Some(a.int("lignes").unwrap_or(1_000) as u64) },
             since_seconds: a.int("depuis").map(|s| s as u64),
             previous: a.bool("precedent"),
+            encoding: a.str("encodage"),
         },
         follow_seconds: a.int("suivre").unwrap_or(0) as u64,
         search: a.str("recherche").filter(|r| !r.is_empty()).map(|text| SearchOptions {
@@ -181,10 +189,25 @@ pub fn core_tools() -> Vec<Tool> {
         .input(vec![("connexion", z::string()), ("chemin", z::array(z::string()).max(3).default(json!([])))])
         .read_only()
         .run(|app, a, _| async move {
+            if !path_of(&a, "chemin").is_empty() {
+                if let Err(e) = check_local(&app, &a) { return Ok(fail(e.message)); }
+            }
             Ok(match crate::sources::browse(&app.connections, &a.string("connexion"), &path_of(&a, "chemin")).await {
                 Ok(nodes) => ok(nodes),
                 Err(e) => fail(e.message),
             })
+        }));
+
+    t.push(tool("fichiers_lister", "Lister les fichiers du poste ouverts aux agents",
+        "Fichiers et motifs de logs du poste que l'utilisateur a ouverts aux agents (Paramètres → Fichiers), avec taille et date de modification. À lire avec logs_lire (connexion « local », chemin [fichier ou motif]) ; sources_parcourir liste les fichiers d'un motif.")
+        .read_only()
+        .visible(Visibility::Fichiers)
+        .run(|app, _, _| async move {
+            let files = crate::files::agent_files(&app.config.config().fichiers.agents);
+            Ok(ok(files.into_iter().map(|f| obj! {
+                "connexion" => crate::files::LOCAL, "chemin" => vec![f.path.clone()], "motif" => f.pattern,
+                "present" => f.exists, "taille" => f.size, "modifie" => f.modified,
+            }).collect::<Vec<_>>()))
         }));
 
     // --- Logs et messages Kafka ---------------------------------------------------------------
@@ -196,6 +219,7 @@ pub fn core_tools() -> Vec<Tool> {
         .input(lire)
         .read_only()
         .run(|app, a, _| async move {
+            if let Err(e) = check_local(&app, &a) { return Ok(fail(e.message)); }
             let r = read_logs(&app, read_request(&a, 200)).await?;
             let raw = a.bool("brut").unwrap_or(false);
             Ok(ok(obj! {
@@ -217,6 +241,7 @@ pub fn core_tools() -> Vec<Tool> {
             if Path::new(&file).exists() && !a.bool("ecraser").unwrap_or(false) {
                 return Ok(fail("Le fichier existe déjà (ecraser: true pour le remplacer)."));
             }
+            if let Err(e) = check_local(&app, &a) { return Ok(fail(e.message)); }
             let r = read_logs(&app, read_request(&a, 1_000_000)).await?;
             let format = ExportFormat::for_file(&file);
             tokio::fs::write(&file, export_content(&r.entries, format)).await?;

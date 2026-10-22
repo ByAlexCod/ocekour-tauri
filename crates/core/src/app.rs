@@ -69,6 +69,8 @@ pub struct App {
     pub analytics: Arc<Analytics>,
     pub accounts: Arc<Accounts>,
     pub journal: Arc<ActionJournal>,
+    /// Fichiers du poste : récents, favoris, encodages.
+    pub files: crate::files::LocalFiles,
     pub mcp_http: McpHttpServer,
     /// Navigateur piloté par les outils web_* (partagé entre les appels).
     pub web: WebHub,
@@ -118,6 +120,7 @@ impl App {
         let connections = Arc::new(Connections::new(config.clone(), secrets.clone()));
         let accounts = Accounts::new(config.clone(), secrets.clone(), &format!("Ocekour/{} (agent MCP)", options.version));
         let journal = ActionJournal::new(data_dir.join("actions.ndjson"));
+        let local_files = crate::files::LocalFiles::new(data_dir.join("fichiers-recents.json"));
         let licence = LicenceManager::new(secrets.clone(), options.licence_keys.unwrap_or_else(LicenceKeys::of_build));
         let analytics = {
             let (target, delivery) = (licence.clone(), licence.clone());
@@ -190,6 +193,7 @@ impl App {
             analytics,
             accounts,
             journal,
+            files: local_files,
             tools: once_cell::sync::OnceCell::new(),
             licence_loading: tokio::sync::OnceCell::new(),
         });

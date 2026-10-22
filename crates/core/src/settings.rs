@@ -56,6 +56,23 @@ pub fn set_notifications(config: &ConfigStore, patch: &Value) -> anyhow::Result<
     config.edit(move |doc, _| Ok(doc.set(&ypath!["notifications"], &next)?))
 }
 
+/// Fichiers visibles par les agents (liste remplacée ; chemins absolus, fichiers ou motifs).
+pub fn set_fichiers(config: &ConfigStore, patch: &Value) -> anyhow::Result<ConfigState> {
+    let schema = z::object(vec![("agents", z::array(z::string().min(1)).max(100).optional())]);
+    let parsed = schema.parse(patch).map_err(issues)?;
+    let mut next = config.state().config["fichiers"].clone();
+    if let Some(agents) = parsed.get("agents").and_then(|a| a.as_array()) {
+        let mut list: Vec<Value> = vec![];
+        for a in agents {
+            let path = a.as_str().unwrap_or_default().trim().to_string();
+            crate::streams::file::FileTarget::parse(&path).map_err(|e| anyhow::anyhow!("{path} : {}", e.message))?;
+            if !list.contains(&json!(path)) { list.push(json!(path)); }
+        }
+        next["agents"] = Value::Array(list);
+    }
+    config.edit(move |doc, _| Ok(doc.set(&ypath!["fichiers"], &next)?))
+}
+
 /// Réglages du contexte IA (fusion partielle ; `tls.caFile: null` retire le fichier).
 pub fn set_contexte(config: &ConfigStore, patch: &Value) -> anyhow::Result<ConfigState> {
     let schema = z::object(vec![

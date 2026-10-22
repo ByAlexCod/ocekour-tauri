@@ -39,7 +39,8 @@ pub const HISTORY_LIMIT: Duration = Duration::from_secs(120);
 
 /// Ouvre un flux, collecte ses lignes jusqu'à la fin de l'historique (ou du suivi).
 pub async fn read_logs(app: &App, request: ReadRequest) -> anyhow::Result<ReadResult> {
-    let connection = app.connections.get(&request.connection_id)?;
+    let local = request.connection_id == crate::files::LOCAL;
+    let connection = if local { None } else { Some(app.connections.get(&request.connection_id)?) };
     let lines: Arc<Mutex<Vec<LogLine>>> = Arc::default();
     let last: Arc<Mutex<(StreamState, Option<String>)>> = Arc::new(Mutex::new((StreamState::Connecting, None)));
     let done = Arc::new(tokio::sync::Notify::new());
@@ -63,7 +64,10 @@ pub async fn read_logs(app: &App, request: ReadRequest) -> anyhow::Result<ReadRe
     let _ = tokio::time::timeout(limit, done.notified()).await;
     app.streams.close(&id);
 
-    let key = profile_key_of(app, &connection, &request.path).await;
+    let key = match &connection {
+        Some(c) => profile_key_of(app, c, &request.path).await,
+        None => crate::files::profile_key(&request.path),
+    };
     let profile = resolve_profile(&app.config.config().profiles, &key);
     let lines = std::mem::take(&mut *lines.lock());
     let received = lines.len();

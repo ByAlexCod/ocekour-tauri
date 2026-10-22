@@ -177,6 +177,11 @@ pub struct SourceNode {
     pub has_previous: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partitions: Option<u64>,
+    /// Fichier : taille (octets) et date de modification (ISO).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified: Option<String>,
 }
 
 /// Workload propriétaire d'un pod (Deployment déduit du ReplicaSet, CronJob du Job).

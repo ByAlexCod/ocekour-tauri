@@ -122,7 +122,7 @@ async fn run(c: &Ctx, pod: &str, container: &str, workload: Option<&str>, option
 }
 
 fn opts(follow: bool, tail: Option<u64>, previous: bool) -> StreamOptions {
-    StreamOptions { follow, tail_lines: tail, since_seconds: None, previous: previous.then_some(true) }
+    StreamOptions { follow, tail_lines: tail, since_seconds: None, previous: previous.then_some(true), encoding: None }
 }
 
 #[tokio::test]

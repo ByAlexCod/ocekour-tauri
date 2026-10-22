@@ -1,7 +1,10 @@
 //! Flux de lignes (conteneur Rancher, topic Kafka) : événements envoyés par lots au
 //! destinataire (fenêtre, outil MCP, téléchargement).
 
+pub mod encoding;
+pub mod file;
 pub mod lines;
+pub mod pattern;
 pub mod rancher;
 pub mod kafka;
 pub mod manager;
@@ -73,6 +76,9 @@ pub struct StreamOptions {
     pub since_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous: Option<bool>,
+    /// Fichier : encodage imposé (sinon détecté).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<String>,
 }
 
 /// Temporisations (réduites dans les tests).

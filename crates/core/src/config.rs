@@ -138,6 +138,11 @@ pub fn web_schema() -> S {
     ])
 }
 
+/// Fichiers du poste visibles par les agents (chemins ou motifs).
+pub fn fichiers_schema() -> S {
+    z::object(vec![("agents", z::array(z::string().min(1)).default(json!([])))])
+}
+
 pub fn database_schema() -> S {
     z::object(vec![
         ("id", z::string().min(1)),
@@ -213,6 +218,7 @@ pub fn config_schema() -> S {
         ),
         ("web", web_schema().default(json!({}))),
         ("databases", z::array(database_schema()).default(json!([]))),
+        ("fichiers", fichiers_schema().default(json!({}))),
     ])
 }
 
@@ -472,6 +478,13 @@ pub struct AppConfig {
     pub filter_presets: Vec<FilterPreset>,
     pub web: WebConfig,
     pub databases: Vec<DatabaseConnection>,
+    pub fichiers: FichiersConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct FichiersConfig {
+    /// Fichiers ou motifs que les agents peuvent lire.
+    pub agents: Vec<String>,
 }
 
 impl Default for AppConfig {
