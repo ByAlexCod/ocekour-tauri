@@ -41,7 +41,7 @@ les clés d'activation sont ceux de la 1.x : la migration n'a rien à refaire.
 
 ## Gains par rapport à la version Electron
 
-- Exe d'une vingtaine de Mo (contre ~330 Mo décompressés au premier lancement) ; démarrage
+- Exe d'environ 30 Mo (contre ~330 Mo décompressés au premier lancement) ; démarrage
   immédiat, WebView2 du système.
 - Bundle initial de l'interface ~210 Ko (CodeMirror, explorateur S3 et Paramètres chargés à la
   demande).

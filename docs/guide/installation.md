@@ -9,7 +9,7 @@ Il n'y a **rien à installer**. Copiez `Ocekour-<version>.exe` où vous voulez (
 
 - Windows 10 ou 11, 64 bits.
 - Aucun droit administrateur requis.
-- L'exe (une vingtaine de Mo) démarre **immédiatement**, sans rien décompresser : l'affichage
+- L'exe (environ 30 Mo) démarre **immédiatement**, sans rien décompresser : l'affichage
   utilise **Microsoft Edge WebView2**, déjà présent sur Windows 10 et 11.
 - Pour un poste sans WebView2, l'installateur `Ocekour_<version>_x64-setup.exe` (sans droit
   administrateur) l'installe au besoin.

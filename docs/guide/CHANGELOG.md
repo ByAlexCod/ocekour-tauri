@@ -9,7 +9,7 @@
 - Ocekour est réécrit : un **cœur en Rust** (sources, flux, Kafka, S3, MCP, notifications,
   contexte IA, bases de données, navigateur) et une **interface Svelte** qui n'en est qu'une
   surcouche, affichée par **WebView2** (déjà présent sur Windows 10/11).
-- **Démarrage immédiat** : plus de décompression de ~330 Mo au premier lancement ; exe d'une
+- **Démarrage immédiat** : plus de décompression de ~330 Mo au premier lancement ; exe d'environ
   vingtaine de Mo, mémoire divisée par plusieurs.
 - **Sans interface** : `Ocekour-<version>.exe --mcp | --mcp-http | --notify` comme avant, et un
   `ocekour-headless.exe` autonome (sans WebView2) pour les serveurs et tâches planifiées.
