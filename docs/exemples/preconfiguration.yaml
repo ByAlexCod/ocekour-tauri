@@ -1,0 +1,49 @@
+# Préconfiguration d'une clé d'activation (node scripts/cle.mts generer … --preconfig <ce fichier>).
+# Même format que config.yaml (sections connections, profiles et services), SANS AUCUN SECRET :
+# tokens, mots de passe et clés secrètes sont saisis par chacun dans Ocekour.
+# `id` est facultatif (calculé à partir du type et du nom : stable d'une clé à l'autre).
+
+connections:
+  - type: rancher
+    name: Rancher prod
+    url: https://rancher.intra
+    tls:
+      insecure: false
+    clusters:
+      - { id: c-m-abcd1234, name: prod }
+      - { id: c-m-efgh5678, name: preprod }
+
+  - type: kafka
+    name: Kafka prod
+    brokers: [kafka1.intra:9092, kafka2.intra:9092]
+    security:
+      protocol: SASL_PLAINTEXT
+      mechanism: SCRAM-SHA-512
+      # username: laissé vide, chacun saisit le sien (ou compte technique commun)
+    registry:
+      url: http://schema-registry.intra:8081
+
+  - type: s3
+    name: S3 archives
+    url: https://s3.intra
+    pathStyle: true
+    accessKeyId: A-SAISIR          # identifiant public ; la clé secrète est saisie par chacun
+    buckets: [archives-logs]
+
+profiles:
+  - match: 'prod/*/api-*'
+    columns: [traceId]
+
+# Hub MCP (0.3.0) : URL des outils de l'équipe, pré-remplies dans Paramètres → Comptes.
+# Seulement url et tls : chacun crée son jeton et décide d'autoriser l'écriture.
+# Ignoré par les versions antérieures à 0.3.0.
+services:
+  gitlab:
+    url: https://gitlab.intra
+  jira:
+    url: https://jira.intra
+  confluence:
+    url: https://confluence.intra
+  rocketchat:
+    url: https://chat.intra
+    # tls: { caFile: C:\certs\ac-interne.cer }

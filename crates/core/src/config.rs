@@ -563,6 +563,9 @@ pub struct ConfigStore {
     write_lock: parking_lot::Mutex<()>,
 }
 
+/// Surveillant de config.yaml (voir [`ConfigStore::watch`]).
+pub type Watcher = notify::RecommendedWatcher;
+
 impl ConfigStore {
     pub fn new(file: impl Into<PathBuf>) -> Arc<Self> {
         let defaults = config_schema().parse(&json!({})).unwrap();
@@ -657,7 +660,7 @@ impl ConfigStore {
 
     /// Recharge à chaud sur modification externe. Le surveillant vit tant que la valeur renvoyée
     /// est gardée.
-    pub fn watch(self: &Arc<Self>) -> anyhow::Result<notify::RecommendedWatcher> {
+    pub fn watch(self: &Arc<Self>) -> anyhow::Result<Watcher> {
         use notify::{RecursiveMode, Watcher};
         let dir = self.file.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
         std::fs::create_dir_all(&dir)?;

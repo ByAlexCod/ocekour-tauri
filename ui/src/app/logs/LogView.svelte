@@ -872,7 +872,7 @@
         <span class="group/col flex flex-1 items-center gap-1">message {@render wrapToggle(MESSAGE_COLUMN, 'message')}</span>
       </div>
 
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
       <div bind:this={viewport} tabindex="0" role="log" aria-label="Lignes de log" class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto font-mono text-xs focus-visible:outline-none" onscroll={onScroll} onkeydown={onKey}>
         <div class="relative w-full" style:height="{total}px">
           <div class="absolute inset-x-0 top-0" style:transform="translateY({offset}px)">

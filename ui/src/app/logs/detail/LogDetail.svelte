@@ -56,10 +56,10 @@
 </script>
 
 <div class="flex items-center gap-2 border-b border-slate-200 px-3 py-1.5 text-sm dark:border-slate-800">
-  <nav class="flex gap-3" role="tablist">
+  <div class="flex gap-3" role="tablist">
     <button type="button" role="tab" class="detail-tab" aria-selected={tab === 'fields'} onclick={() => (tab = 'fields')}>Détail</button>
     <button type="button" role="tab" class="detail-tab" aria-selected={tab === 'raw'} onclick={() => (tab = 'raw')}>Brut</button>
-  </nav>
+  </div>
   <span class="flex-1"></span>
   <button type="button" class="btn py-0.5" onclick={() => copy(pretty, 'JSON formaté copié')}>Copier {entry.parsed.json ? 'le JSON' : 'le texte'}</button>
   <button type="button" class="btn py-0.5" title="Copier la ligne brute" onclick={() => copy(entry.text, 'Ligne brute copiée')}>Brut</button>

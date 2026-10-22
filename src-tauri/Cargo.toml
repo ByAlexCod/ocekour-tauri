@@ -1,0 +1,43 @@
+[package]
+name = "ocekour"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ocekour : interface de bureau (Tauri) au-dessus du cœur ocekour-core."
+default-run = "ocekour"
+
+[lib]
+name = "ocekour_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ocekour"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ocekour-core = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+async-trait = "0.1"
+once_cell = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
+
+[features]
+# Construit pour `tauri dev` / `tauri build` (protocole personnalisé de production).
+custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+tempfile = "3"

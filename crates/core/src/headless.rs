@@ -43,6 +43,8 @@ async fn until_stopped() {
 
 /// Exécute un mode jusqu'à son terme ; renvoie le code de sortie.
 pub async fn run(app: Arc<App>, mode: Mode) -> i32 {
+    // config.yaml modifié à la main : pris en compte sans redémarrer (outils MCP, notifications).
+    let _watcher = app.config.watch().map_err(|e| log::warn!("Surveillance de config.yaml impossible : {e}")).ok();
     let code = match mode {
         Mode::Stdio => {
             // Client parti (entrée fermée) : Ocekour s'arrête aussi, sans rester orphelin.

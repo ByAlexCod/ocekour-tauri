@@ -121,7 +121,7 @@
 {#snippet rowTpl(row: Row)}
   {@const selected = isSelected(row)}
   <li role="treeitem" aria-expanded={row.expandable ? row.expanded : undefined} aria-selected={selected} aria-level={row.depth + 1}>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_tabindex -->
     <div
       tabindex="0"
       class="group flex h-7 cursor-pointer items-center gap-1.5 pr-2 hover:bg-slate-200/70 focus-visible:outline-2 focus-visible:outline-sky-500 dark:hover:bg-slate-800 {selected
