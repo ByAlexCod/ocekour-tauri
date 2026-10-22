@@ -240,3 +240,43 @@ async fn kafka_broker_ancien_sans_ids_de_topics() {
     texts.sort();
     assert_eq!(texts, vec!["message 2", "message 3", "message 4", "message 5"]);
 }
+
+/// « Télécharger… » sur un topic : tous les messages, dans l'ordre chronologique (toutes
+/// partitions), format NDJSON avec métadonnées, filtre de recherche.
+#[tokio::test(flavor = "multi_thread")]
+async fn telechargement_d_un_topic() {
+    if broker().is_none() { return; }
+    let f = fixture().await;
+    #[derive(Default)]
+    struct SaveUi(Mutex<Vec<std::path::PathBuf>>);
+    #[async_trait::async_trait]
+    impl crate::ui::Ui for SaveUi {
+        async fn save_dialog(&self, _: &str, _: std::path::PathBuf, _: Vec<crate::ui::FileFilter>) -> Option<std::path::PathBuf> { self.0.lock().pop() }
+    }
+    let ui = Arc::new(SaveUi::default());
+    let t = super::support::test_app_with("# conf\n", true, ui.clone()).await;
+    let id = t.app.connections.save(&json!({ "type": "kafka", "name": "test", "brokers": [broker().unwrap()], "security": { "username": "lecteur" }, "secret": "lecteur-secret" })).unwrap();
+    let caller = crate::api::Caller { window: "main".into() };
+    let topic = format!("{}.commandes", f.run);
+    let download = |name: &str, request: Value| {
+        let out = t.path(name);
+        ui.0.lock().push(out.clone());
+        let (app, caller) = (t.app.clone(), caller.clone());
+        async move {
+            let r = tokio::time::timeout(Duration::from_secs(60), crate::api::call(&app, &caller, "export:downloadLogs", vec![request])).await.expect("téléchargement bloqué");
+            (r, std::fs::read_to_string(&out).unwrap_or_default())
+        }
+    };
+    let (r, written) = download("topic.ndjson", json!({ "defaultName": "x", "filtered": false, "sources": [{ "connectionId": id, "path": [topic] }] })).await;
+    assert_eq!(r.unwrap()["lines"], 30);
+    let lines: Vec<Value> = written.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let order: Vec<String> = lines.iter().map(|l| l["value"]["message"].as_str().unwrap().to_string()).collect();
+    assert_eq!(order, (0..30).map(|i| format!("commande {i}")).collect::<Vec<_>>(), "ordre chronologique, toutes partitions");
+    assert_eq!((lines[0]["key"].as_str(), lines[0]["headers"]["source"].as_str()), (Some("cmd-0"), Some("test")));
+    let request = json!({ "defaultName": "x", "filtered": true, "search": { "text": "commande 2", "caseSensitive": false, "regex": false }, "sources": [{ "connectionId": id, "path": [topic] }] });
+    let (r, written) = download("filtre.ndjson", request).await;
+    assert_eq!(r.unwrap()["lines"], 11);
+    assert_eq!(written.lines().count(), 11);
+    let (r, _) = download("absent.ndjson", json!({ "defaultName": "x", "filtered": false, "sources": [{ "connectionId": id, "path": ["topic-inexistant-zz"] }] })).await;
+    assert!(r.is_err(), "topic inexistant : {r:?}");
+}

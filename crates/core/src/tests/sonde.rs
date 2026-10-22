@@ -324,3 +324,45 @@ async fn sonde_dans_l_application() {
     assert_match(&opened.value, &json!({ "connexion": id, "type": "sonde", "chemin": ["batch", "batch-1.log"] }));
     running.stop();
 }
+
+/// « Télécharger… » sur une source de sonde : contenu exact, fichier d'un motif, erreurs.
+#[tokio::test(flavor = "multi_thread")]
+async fn telechargement_depuis_la_sonde() {
+    #[derive(Default)]
+    struct SaveUi(parking_lot::Mutex<Vec<PathBuf>>);
+    #[async_trait::async_trait]
+    impl crate::ui::Ui for SaveUi {
+        async fn save_dialog(&self, _: &str, _: PathBuf, _: Vec<crate::ui::FileFilter>) -> Option<PathBuf> { self.0.lock().pop() }
+    }
+    let probe = Probe::new();
+    let text: String = (0..600).map(|i| format!("2026-10-22T10:00:{:02}.000Z INFO ligne {i}\n", i % 60)).collect();
+    std::fs::write(probe.logs.join("api.log"), &text).unwrap();
+    let running = probe.start().await;
+    let url = format!("https://127.0.0.1:{}", running.addr.port());
+    let ui = Arc::new(SaveUi::default());
+    let t = super::support::test_app_with("# conf\n", true, ui.clone()).await;
+    let id = t.app.connections.save(&json!({ "type": "sonde", "name": "srv-test", "url": url, "tls": { "insecure": false, "fingerprint": probe.init.fingerprint }, "secret": probe.init.token })).unwrap();
+    let caller = crate::api::Caller { window: "main".into() };
+    let download = |name: &str, path: Value| {
+        let out = t.path(name);
+        ui.0.lock().push(out.clone());
+        let request = json!({ "defaultName": "x", "filtered": false, "sources": [{ "connectionId": id, "path": path }] });
+        let (app, caller) = (t.app.clone(), caller.clone());
+        async move {
+            let r = tokio::time::timeout(Duration::from_secs(60), crate::api::call(&app, &caller, "export:downloadLogs", vec![request])).await.expect("téléchargement bloqué");
+            (r, std::fs::read_to_string(&out).unwrap_or_default())
+        }
+    };
+    let (r, written) = download("api.log", json!(["api"])).await;
+    assert_eq!(r.unwrap()["lines"], 600);
+    assert_eq!(written, text);
+    let (r, written) = download("b.log", json!(["batch", "batch-1.log"])).await;
+    r.unwrap();
+    assert_eq!(written, "b1\n");
+    let (r, _) = download("x.log", json!(["absente"])).await;
+    assert!(r.is_err(), "source inconnue : {r:?}");
+    // Sonde arrêtée : erreur rapide, pas d'attente sans fin.
+    running.stop();
+    let (r, _) = download("y.log", json!(["api"])).await;
+    assert!(r.is_err(), "sonde arrêtée : {r:?}");
+}

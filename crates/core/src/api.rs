@@ -11,7 +11,7 @@ use crate::logs::{ExportFormat, LogEntry, SearchOptions, export_content, export_
 use crate::mcp::logs::{ReadRequest, read_logs};
 use crate::s3::S3Entry;
 use crate::s3::service::S3Op;
-use crate::streams::StreamOptions;
+use crate::streams::{StreamOptions, StreamState};
 use crate::ui::{FileFilter, OpenOptions};
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -371,7 +371,10 @@ async fn s3(app: &Arc<App>, caller: &Caller, channel: &str, args: &[Value]) -> R
 }
 
 /// Lignes au plus écrites dans un téléchargement d'historique complet (garde-fou mémoire).
+#[cfg(not(test))]
 pub const DOWNLOAD_CAP: usize = 2_000_000;
+#[cfg(test)]
+pub const DOWNLOAD_CAP: usize = 1_000;
 
 /// Historique complet d'un flux ou d'un assemblage : fusion par horodatage, écriture du
 /// fichier choisi. Historique seul (jamais de suivi).
@@ -389,36 +392,63 @@ async fn download_logs(app: &Arc<App>, request: &Value) -> R {
         None
     };
     let multi = sources.len() > 1;
-    let mut all: Vec<LogEntry> = vec![];
+    // Clé de tri de chaque ligne : son horodatage, ou celui de la ligne datée qui la précède
+    // (suite d'une pile d'erreur, ligne multiligne) pour qu'elle reste à sa place à la fusion.
+    let mut all: Vec<(i64, LogEntry)> = vec![];
+    let (mut truncated, mut incomplete) = (false, vec![]);
     for source in sources {
         let connection_id = source["connectionId"].as_str().filter(|s| !s.is_empty()).ok_or("connectionId attendu")?.to_string();
         let path: Vec<String> = serde_json::from_value(source["path"].clone()).map_err(|_| "Chemin invalide".to_string())?;
         if path.is_empty() || path.len() > 5 { return Err("Chemin invalide".into()); }
+        let label = source["label"].as_str().map(str::to_string).unwrap_or_else(|| path.last().cloned().unwrap_or_default());
+        let encoding = source["encoding"].as_str().filter(|e| !e.is_empty()).map(str::to_string);
         let read = |previous: bool| ReadRequest {
             connection_id: connection_id.clone(),
             path: path.clone(),
-            options: StreamOptions { follow: false, previous: previous.then_some(true), ..Default::default() },
+            options: StreamOptions { follow: false, previous: previous.then_some(true), encoding: encoding.clone(), ..Default::default() },
             follow_seconds: 0,
             search: search.clone(),
             levels: levels.clone(),
             max_lines: DOWNLOAD_CAP,
+            until_end: true,
         };
         let mut entries = vec![];
-        // Instance précédente (avant redémarrage) d'abord : logs plus anciens.
+        // Instance précédente (avant redémarrage) d'abord : logs plus anciens. Absente : ignorée.
         if source["includePrevious"] == true {
-            if let Ok(r) = read_logs(app, read(true)).await { entries.extend(r.entries); }
+            if let Ok(r) = read_logs(app, read(true)).await {
+                if r.status == StreamState::Ended { truncated |= r.truncated; entries.extend(r.entries); }
+            }
         }
-        entries.extend(read_logs(app, read(false)).await.map_err(e)?.entries);
+        let r = read_logs(app, read(false)).await.map_err(e)?;
+        // Source en erreur : le dire, plutôt qu'un fichier vide ou partiel présenté comme complet.
+        let gone = r.replacements.as_ref().map(|pods| {
+            let current = if pods.is_empty() { String::new() } else { format!(" Pods actuels : {}.", pods.join(", ")) };
+            format!("{} Ses logs ne sont plus disponibles.{current}", r.message.clone().unwrap_or_default())
+        });
+        if r.status == StreamState::Error || gone.is_some() {
+            let message = gone.or(r.message).unwrap_or_else(|| "lecture impossible".into());
+            return Err(if multi { format!("{label} : {message}") } else { message });
+        }
+        if r.status != StreamState::Ended { incomplete.push(label.clone()); }
+        truncated |= r.truncated;
+        entries.extend(r.entries);
         if multi {
-            let label = source["label"].as_str().map(str::to_string).unwrap_or_else(|| path.last().cloned().unwrap_or_default());
             for entry in &mut entries { entry.source = Some(label.clone()); }
         }
-        all.extend(entries);
+        let mut key = entries.iter().map(|e| e.time_key()).find(|k| *k != i64::MAX).unwrap_or(i64::MAX);
+        for entry in entries {
+            let own = entry.time_key();
+            if own != i64::MAX { key = own; }
+            all.push((key, entry));
+        }
     }
-    if multi { all.sort_by_key(|e| e.time_key()); }
-    let truncated = all.len() > DOWNLOAD_CAP;
-    if truncated { all.drain(..all.len() - DOWNLOAD_CAP); }
+    if multi { all.sort_by_key(|(key, _)| *key); }
+    if all.len() > DOWNLOAD_CAP {
+        truncated = true;
+        all.drain(..all.len() - DOWNLOAD_CAP);
+    }
+    let all: Vec<LogEntry> = all.into_iter().map(|(_, entry)| entry).collect();
     tokio::fs::write(&file, export_content(&all, format)).await.map_err(e)?;
-    log::info!("Téléchargement logs : {} ligne(s) → {}", all.len(), file.display());
-    Ok(json!({ "file": file, "lines": all.iter().filter(|e| !e.notice).count(), "truncated": truncated }))
+    log::info!("Téléchargement logs : {} ligne(s) → {}{}", all.len(), file.display(), if incomplete.is_empty() { String::new() } else { format!(" (incomplet : {})", incomplete.join(", ")) });
+    Ok(json!({ "file": file, "lines": all.iter().filter(|e| !e.notice).count(), "truncated": truncated, "incomplete": incomplete }))
 }

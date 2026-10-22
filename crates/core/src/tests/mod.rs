@@ -3,6 +3,7 @@
 mod api;
 mod bdd;
 mod contexte;
+mod download;
 mod files;
 mod kafka;
 mod rancher;

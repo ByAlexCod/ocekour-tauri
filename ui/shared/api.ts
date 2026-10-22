@@ -377,6 +377,8 @@ export interface LogDownloadSource {
   label?: string;
   /** Inclure aussi les logs de l'instance précédente du conteneur (avant redémarrage). */
   includePrevious?: boolean;
+  /** Fichier : encodage choisi dans l'onglet (sinon celui mémorisé, ou détecté). */
+  encoding?: FileEncoding;
 }
 
 /** Téléchargement de l'historique complet (depuis la création) d'un flux ou d'un assemblage. */
@@ -397,6 +399,8 @@ export interface LogDownloadResult {
   lines: number;
   /** Historique tronqué (limite atteinte). */
   truncated: boolean;
+  /** Sources dont l'historique n'a pas pu être lu jusqu'au bout (source muette trop longtemps). */
+  incomplete?: string[];
 }
 
 /** Écriture faite par un agent via le MCP (journal local). */

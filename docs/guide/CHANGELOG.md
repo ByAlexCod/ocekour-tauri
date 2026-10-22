@@ -22,6 +22,20 @@
   saisie de la clé d'activation (ils étaient perdus).
 - L'exe s'appelle désormais `Ocekour.exe` (sans numéro de version).
 
+**Téléchargement de l'historique (« Télécharger… ») corrigé**
+
+- Topic Kafka en « Tout (depuis le début) » : messages dans l'ordre chronologique, toutes
+  partitions confondues (ils arrivaient partition par partition), à l'écran comme dans le
+  fichier téléchargé.
+- Source en erreur (pod supprimé, fichier absent, sonde arrêtée, topic inexistant) : message
+  clair, au lieu d'un fichier vide annoncé « 0 ligne ». Pod supprimé : les pods actuels sont
+  indiqués.
+- Gros historiques : plus de coupure silencieuse après 2 minutes ; la lecture continue tant que
+  des lignes arrivent, et un historique incomplet est signalé.
+- Limite de 2 000 000 lignes : désormais signalée aussi pour une source seule.
+- Fichier en Windows-1252 (ou autre encodage choisi) : téléchargé avec le bon encodage.
+- Assemblage : les lignes de suite (pile d'erreur) restent sous leur ligne d'origine.
+
 ## 2.1.0
 
 **Nouveau : fichiers locaux** ([guide](fichiers-locaux.md))

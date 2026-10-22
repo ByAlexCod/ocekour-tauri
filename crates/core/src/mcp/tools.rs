@@ -97,6 +97,7 @@ fn read_request(a: &Value, default_max: usize) -> ReadRequest {
         }),
         levels: a["niveaux"].as_array().map(|l| l.iter().filter_map(|v| v.as_str().and_then(Level::parse)).collect()),
         max_lines: a.int("max").map(|m| m as usize).unwrap_or(default_max),
+        until_end: false,
     }
 }
 

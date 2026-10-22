@@ -157,7 +157,9 @@ async fn connexions_sources_flux_et_exports() {
     let result = c(&t, "export:downloadLogs", json!([request])).await.unwrap();
     let written = std::fs::read_to_string(&out).unwrap();
     assert_eq!(result["lines"].as_u64().unwrap() as usize, written.lines().count());
-    assert!(result["lines"].as_u64().unwrap() > 0 && result["truncated"] == false);
+    // Au-delà de la limite (réduite dans les tests), les plus récentes sont gardées et c'est signalé.
+    let lines = result["lines"].as_u64().unwrap() as usize;
+    assert!(lines > 0 && (result["truncated"] == true) == (lines == crate::api::DOWNLOAD_CAP), "{result}");
     assert!(written.lines().all(|l| l.contains("\"source\":\"api")), "{}", written.lines().next().unwrap());
     ui.save_answers.lock().push(None);
     assert_eq!(c(&t, "export:downloadLogs", json!([request])).await.unwrap(), Value::Null);

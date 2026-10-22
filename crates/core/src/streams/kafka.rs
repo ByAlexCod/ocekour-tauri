@@ -47,6 +47,35 @@ fn compare(a: &RawMessage, b: &RawMessage) -> std::cmp::Ordering {
     a.timestamp.cmp(&b.timestamp).then(a.partition.cmp(&b.partition)).then(a.offset.cmp(&b.offset))
 }
 
+/// Fusion chronologique de partitions lues par lots : un message ne part que lorsque chaque
+/// partition encore en cours a, en attente, un message au moins aussi récent (dans une
+/// partition, les messages arrivent dans l'ordre des offsets).
+#[derive(Default)]
+struct Merge {
+    queues: HashMap<i32, std::collections::VecDeque<RawMessage>>,
+}
+
+impl Merge {
+    fn push(&mut self, messages: Vec<RawMessage>) {
+        for m in messages { self.queues.entry(m.partition).or_default().push_back(m); }
+    }
+
+    /// Messages envoyables sans risque d'en voir arriver un plus ancien ; `open` : partitions
+    /// dont la lecture n'est pas terminée.
+    fn ready(&mut self, open: &[i32]) -> Vec<RawMessage> {
+        let mut out = vec![];
+        loop {
+            if open.iter().any(|p| self.queues.get(p).is_none_or(|q| q.is_empty())) { break; }
+            let Some(p) = self.queues.iter().filter_map(|(p, q)| q.front().map(|m| (*p, m))).min_by(|a, b| compare(a.1, b.1)).map(|(p, _)| p) else { break };
+            out.push(self.queues.get_mut(&p).unwrap().pop_front().unwrap());
+        }
+        out
+    }
+
+    /// Fin de lecture : tout ce qui reste.
+    fn rest(self) -> Vec<RawMessage> { self.queues.into_values().flatten().collect() }
+}
+
 impl Run {
     fn err(&self, e: KafkaError) -> SourceError { to_source_error(&e, &self.connection.brokers) }
 
@@ -117,18 +146,25 @@ impl Run {
         let tail = self.options.tail_lines;
         let stream_all = tail.is_none() || self.options.since_seconds.is_some_and(|s| s > 0);
         let mut collected: Vec<RawMessage> = vec![];
+        let progressive = stream_all && tail.is_none_or(|t| t == 0);
+        let mut merge = Merge::default();
         loop {
             if self.cancel.is_cancelled() { return Ok(()); }
             let pending: Vec<usize> = (0..self.partitions.len()).filter(|i| self.partitions[*i].next < end.get(&self.partitions[*i].index).copied().unwrap_or(0)).collect();
             if pending.is_empty() { break; }
             let messages = self.fetch_once(Some(&pending), 0).await.map_err(|e| self.err(e))?;
-            if stream_all && tail.is_none_or(|t| t == 0) {
-                // « Tout » : envoyé au fil de l'eau.
-                self.send(messages).await;
+            if progressive {
+                // « Tout » : envoyé au fil de l'eau, dans l'ordre chronologique toutes partitions
+                // confondues (sans tout garder en mémoire).
+                merge.push(messages);
+                let open: Vec<i32> = pending.iter().map(|i| self.partitions[*i].index).filter(|p| self.partitions.iter().any(|x| x.index == *p && x.next < end.get(p).copied().unwrap_or(0))).collect();
+                let ready = merge.ready(&open);
+                if !ready.is_empty() { self.send(ready).await; }
             } else {
                 collected.extend(messages);
             }
         }
+        collected.extend(merge.rest());
         collected.sort_by(compare);
         if let Some(t) = tail {
             let keep = t as usize;
@@ -241,5 +277,31 @@ impl Run {
     fn status(&self, state: StreamState, message: Option<String>) {
         if self.ended || self.cancel.is_cancelled() { return; }
         (self.emit)(StreamEvent::status(state, message));
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    fn m(partition: i32, offset: i64, timestamp: i64) -> RawMessage {
+        RawMessage { partition, offset, timestamp, key: None, value: None, headers: vec![] }
+    }
+
+    #[test]
+    fn fusion_chronologique_par_lots() {
+        let mut merge = Merge::default();
+        // Lot 1 : la partition 1 n'a encore rien donné : rien ne part.
+        merge.push(vec![m(0, 0, 10), m(0, 1, 30)]);
+        assert!(merge.ready(&[0, 1]).is_empty());
+        // Lot 2 : la partition 1 arrive ; part tout ce qui précède sa tête connue.
+        merge.push(vec![m(1, 0, 20), m(1, 1, 40)]);
+        let out: Vec<i64> = merge.ready(&[0, 1]).iter().map(|x| x.timestamp).collect();
+        assert_eq!(out, vec![10, 20, 30]);
+        // La partition 0 est terminée : la 1 se vide seule.
+        let out: Vec<i64> = merge.ready(&[1]).iter().map(|x| x.timestamp).collect();
+        assert_eq!(out, vec![40]);
+        merge.push(vec![m(1, 2, 50)]);
+        assert_eq!(merge.rest().len(), 1);
     }
 }

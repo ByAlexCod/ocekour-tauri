@@ -572,7 +572,13 @@
 
   function sourceOf(target: StreamTarget, label?: string): LogDownloadSource {
     const p = streamPath(target);
-    return { connectionId: p.connectionId, path: p.path, label, includePrevious: target.kind === 'container' && !!target.node.hasPrevious };
+    return {
+      connectionId: p.connectionId,
+      path: p.path,
+      label,
+      includePrevious: target.kind === 'container' && !!target.node.hasPrevious,
+      encoding: target.kind === 'file' ? target.encoding : undefined,
+    };
   }
 
   /** Historique complet : `filtered` applique les filtres courants, sinon tout. */
@@ -600,7 +606,12 @@
     try {
       const result = await api.downloadLogs({ defaultName: name, filtered, search, levels, sources });
       if (!result) return;
-      notifications.info(`${result.lines.toLocaleString('fr-FR')} ligne(s) téléchargée(s)` + (result.truncated ? ' (historique tronqué : limite atteinte)' : ''));
+      const lines = `${result.lines.toLocaleString('fr-FR')} ligne(s) téléchargée(s)`;
+      if (result.incomplete?.length) {
+        notifications.error(`${lines}, mais l'historique est incomplet (la source ne répondait plus) : ${result.incomplete.join(', ')}. Réessayez.`);
+      } else {
+        notifications.info(lines + (result.truncated ? ' (historique tronqué : limite de 2 000 000 lignes atteinte, les plus récentes sont gardées)' : ''));
+      }
       analytics.event({ category: 'Export', action: filtered ? 'historique filtré' : 'historique complet', name: asm ? 'assemblage' : s.target.kind, value: result.lines });
     } catch (e) {
       notifications.error(e as Error);
