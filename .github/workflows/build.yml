@@ -11,47 +11,55 @@ concurrency:
 
 jobs:
   # Cœur, mode sans interface et interface : tests avec de vrais Kafka, S3 (moto) et PostgreSQL.
+  # Sur le runner Linux auto-hébergé (dépôt public : jamais pour une pull request de fork, seuls
+  # les push et lancements manuels du propriétaire l'utilisent). Son disque est conservé d'un run
+  # à l'autre : compilation, distributions Kafka et S3 de test sont gardées dans `CI_DIR`.
   tests:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: secret
-        ports: ['15432:5432']
-        options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, Linux, X64]
+    env:
+      CI_DIR: ${{ github.workspace }}/../.ocekour-ci
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../.ocekour-ci/target
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
-      - name: Dépendances système de Tauri (WebKitGTK)
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
-      # archive.apache.org (seul hôte de Kafka 3.0.2) est très lent : 7 à 11 min par run sans cache.
-      - name: Distributions Kafka (cache)
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ runner.temp }}/kafka/kafka_2.13-4.3.1
-            ${{ runner.temp }}/kafka-legacy/kafka_2.13-3.0.2
-          key: kafka-dist-4.3.1-3.0.2
+      - name: Dépendances système (installées seulement si absentes)
+        run: |
+          missing=$(for p in libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev python3-venv curl postgresql-client; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
+          if [ -n "$missing" ]; then
+            if ! sudo -n true 2>/dev/null; then echo "::error::Paquets à installer sur le runner : $missing"; exit 1; fi
+            sudo apt-get update && sudo apt-get install -y $missing
+          fi
       - name: Broker Kafka de test
-        run: scripts/kafka-test-broker.sh "$RUNNER_TEMP/kafka"
+        run: scripts/kafka-test-broker.sh "$CI_DIR/kafka"
       - name: Broker Kafka 3.0 de test (protocole sans ids de topics)
-        run: scripts/kafka-legacy-broker.sh "$RUNNER_TEMP/kafka-legacy"
+        run: scripts/kafka-legacy-broker.sh "$CI_DIR/kafka-legacy"
       - name: S3 de test (moto)
-        run: scripts/s3-test-server.sh "$RUNNER_TEMP/s3"
+        run: scripts/s3-test-server.sh "$CI_DIR/s3"
+      # PostgreSQL de test par Docker s'il est présent sur le runner ; sinon ces tests sont ignorés.
       - name: Base PostgreSQL de test
-        run: PGPASSWORD=secret psql -h 127.0.0.1 -p 15432 -U postgres -f scripts/pg-test-fixture.sql
+        run: |
+          if ! command -v docker >/dev/null || ! docker info >/dev/null 2>&1; then
+            echo "::warning::Docker absent du runner : tests PostgreSQL ignorés."
+            exit 0
+          fi
+          docker rm -f ocekour-ci-pg >/dev/null 2>&1 || true
+          docker run -d --rm --name ocekour-ci-pg -e POSTGRES_PASSWORD=secret -p 127.0.0.1:15432:5432 postgres:16
+          for _ in $(seq 1 30); do docker exec ocekour-ci-pg pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
+          sleep 2
+          PGPASSWORD=secret psql -h 127.0.0.1 -p 15432 -U postgres -f scripts/pg-test-fixture.sql
+          echo "BDD_TEST_PG=127.0.0.1:15432" >> "$GITHUB_ENV"
+      - name: Navigateur pour les tests web (s'il y en a un)
+        run: |
+          browser=$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)
+          if [ -n "$browser" ]; then echo "OCEKOUR_BROWSER_PATH=$browser" >> "$GITHUB_ENV"; else echo "::warning::Aucun Chrome/Chromium sur le runner : tests de navigateur ignorés."; fi
       - run: npm ci
         working-directory: ui
       - name: Interface (svelte-check, vitest, build)
@@ -63,8 +71,9 @@ jobs:
           KAFKA_TEST_BROKER: localhost:19092
           KAFKA_TEST_LEGACY_BROKER: localhost:19192
           S3_TEST_URL: http://localhost:19000
-          BDD_TEST_PG: 127.0.0.1:15432
-          OCEKOUR_BROWSER_PATH: /usr/bin/google-chrome
+      - name: Arrêt de la base de test
+        if: always()
+        run: docker rm -f ocekour-ci-pg >/dev/null 2>&1 || true
 
   # Exe Windows : un seul ocekour.exe (WebView2 du système), plus l'installateur NSIS.
   windows:
@@ -125,12 +134,18 @@ jobs:
           name: Ocekour-${{ env.VERSION }}
           path: package/
           if-no-files-found: error
+          retention-days: 7
 
   # Sonde et mode sans interface pour Linux : binaire statique (musl), sans aucune dépendance,
-  # à copier tel quel sur un serveur (RHEL, Debian, Alpine…).
+  # à copier tel quel sur un serveur (RHEL, Debian, Alpine…). Runner auto-hébergé : le paquet est
+  # aussi gardé sur sa machine (`CI_DIR/livraisons`), indépendamment du quota d'artefacts GitHub.
   linux:
     needs: tests
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, Linux, X64]
+    env:
+      CI_DIR: ${{ github.workspace }}/../.ocekour-ci
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../.ocekour-ci/target
     steps:
       - name: Secret LICENCE_OBFUSCATION présent
         shell: bash
@@ -145,11 +160,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-      - name: musl-gcc (ring)
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: musl-gcc (ring), installé seulement s'il est absent
+        run: |
+          if ! command -v musl-gcc >/dev/null; then
+            if ! sudo -n true 2>/dev/null; then echo "::error::Paquet à installer sur le runner : musl-tools"; exit 1; fi
+            sudo apt-get update && sudo apt-get install -y musl-tools
+          fi
       - name: ocekour-headless (statique)
         run: cargo build --release -p ocekour-headless --target x86_64-unknown-linux-musl
         env:
@@ -157,19 +173,26 @@ jobs:
           LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
       - name: Vérification (statique, démarre)
         run: |
-          BIN=target/x86_64-unknown-linux-musl/release/ocekour-headless
+          BIN="$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/ocekour-headless"
           file "$BIN" | grep -q 'static'
           "$BIN" --version
+          rm -rf "$RUNNER_TEMP/sonde"
           "$BIN" sonde init --dossier="$RUNNER_TEMP/sonde" --ecoute=127.0.0.1:0 --nom=ci
-      - name: Paquet
+      - name: Paquet (gardé sur le runner)
         run: |
           VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          mkdir -p package
-          cp target/x86_64-unknown-linux-musl/release/ocekour-headless package/
-          cp docs/guide/sonde.md package/ 2>/dev/null || true
+          rm -rf package && mkdir -p package
+          cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/ocekour-headless" package/
+          cp docs/guide/sonde.md package/
+          DEST="$CI_DIR/livraisons/$VERSION-${GITHUB_SHA::7}"
+          mkdir -p "$DEST" && cp -r package/. "$DEST/"
+          echo "Paquet gardé sur le runner : $(realpath "$DEST")" >> "$GITHUB_STEP_SUMMARY"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      # Copie sur GitHub en plus, si le quota d'artefacts le permet.
       - uses: actions/upload-artifact@v5
+        continue-on-error: true
         with:
           name: ocekour-headless-linux-x86_64-${{ env.VERSION }}
           path: package/
           if-no-files-found: error
+          retention-days: 7
