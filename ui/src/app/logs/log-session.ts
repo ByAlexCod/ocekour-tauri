@@ -6,7 +6,7 @@ import type {
   StreamOptions,
   StreamState,
 } from '../../../shared/api';
-import { type StreamTarget, streamPath } from './target';
+import { type StreamTarget, streamOptions, streamPath } from './target';
 import type { SearchOptions } from './filter';
 import { LogBuffer } from './log-buffer';
 import type { LogFilterRule } from './log-filters';
@@ -122,7 +122,7 @@ export class LogSession {
     this.invalidate();
     this.status.set({ state: 'connecting' });
     try {
-      this.streamId = await this.api.open(this.sourcePath, this.options());
+      this.streamId = await this.api.open(this.sourcePath, streamOptions(this.target, this.options()));
       this.register(this.streamId, this);
     } catch (e) {
       this.status.set({ state: 'error', message: (e as Error).message });

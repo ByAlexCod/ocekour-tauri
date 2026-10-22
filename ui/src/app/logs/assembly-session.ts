@@ -10,6 +10,7 @@ import {
   type AssemblyMember,
   type AssemblyTarget,
   type StreamTarget,
+  streamOptions,
   streamPath,
 } from './target';
 
@@ -208,7 +209,7 @@ export class AssemblySession {
     if (member.streamId) this.binder.unbind(member.streamId);
     member.state = 'connecting';
     try {
-      const id = await this.binder.api.open(streamPath(member.target), this.options());
+      const id = await this.binder.api.open(streamPath(member.target), streamOptions(member.target, this.options()));
       member.streamId = id;
       this.binder.bind(id, this);
     } catch (e) {

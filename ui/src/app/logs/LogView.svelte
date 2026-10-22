@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { FileEncoding } from '../../../shared/api';
+  import { localFiles } from '../files/local-files.svelte';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import type { LogDownloadSource } from '../../../shared/api';
   import { analytics } from '../core/analytics';
@@ -17,7 +19,7 @@
   import { type Level, LEVELS } from './parser';
   import { resolveProfile } from './profiles';
   import { LEVEL_CLASS, baseClass, clip, columnText, esc, formatTime, fullDate, noticeTime, visibleRange } from './render';
-  import { profileKey, type StreamTarget, streamPath, targetPath } from './target';
+  import { profileKey, type StreamTarget, streamLabel, streamPath, targetPath } from './target';
 
   /** Affichage d'un flux : barre d'options, état, liste virtualisée à défilement automatique. */
   let {
@@ -74,6 +76,17 @@
   const hasPrevious = $derived(s.target.kind === 'container' && !!s.target.node.hasPrevious);
   /** Topic Kafka : colonnes partition / offset / clé, pas de « Précédent ». */
   const isTopic = s.target.kind === 'topic';
+  /** Fichier (du poste ou d'une sonde) : pas de « Précédent » ; encodage au choix (poste). */
+  const fileTarget = s.target.kind === 'file' ? s.target : undefined;
+  const localFile = !!fileTarget && !fileTarget.connectionId;
+  const ENCODINGS: { value: FileEncoding | ''; label: string }[] = [
+    { value: '', label: 'Auto (UTF-8 / BOM)' },
+    { value: 'utf-8', label: 'UTF-8' },
+    { value: 'utf-16le', label: 'UTF-16 LE' },
+    { value: 'utf-16be', label: 'UTF-16 BE' },
+    { value: 'latin-1', label: 'Latin-1' },
+    { value: 'windows-1252', label: 'Windows-1252' },
+  ];
   const tailChoices = $derived([...new Set([...TAIL_CHOICES, configService.config?.defaultTailLines ?? 1_000])].sort((a, b) => a - b));
   const path = targetPath(s.target);
 
@@ -305,14 +318,14 @@
     const list = rows.toArray();
     if (!api || !list.length) return;
     const target = s.target;
-    const name = target.kind === 'container' ? `${target.pod}-${target.container}` : target.kind === 'topic' ? target.topic : target.kind === 'assembly' ? target.name || 'assemblage' : 'export';
+    const name = target.kind === 'container' ? `${target.pod}-${target.container}` : target.kind === 'topic' ? target.topic : target.kind === 'assembly' ? target.name || 'assemblage' : target.kind === 'file' ? streamLabel(target) : 'export';
     try {
       const pick = await api.pick(exportFileName(name));
       if (!pick) return;
       await api.write(pick.token, exportContent(list, pick.format));
       const count = list.filter((e) => !e.notice).length;
       notifications.info(`${count.toLocaleString('fr-FR')} ligne(s) exportée(s)`);
-      analytics.event({ category: 'Export', action: pick.format, name: target.kind === 'container' ? 'rancher' : 'kafka', value: count });
+      analytics.event({ category: 'Export', action: pick.format, name: target.kind === 'container' ? 'rancher' : target.kind === 'file' ? 'fichier' : 'kafka', value: count });
     } catch (e) {
       notifications.error(e);
     }
@@ -558,7 +571,8 @@
   let dlOpen = $state(false);
 
   function sourceOf(target: StreamTarget, label?: string): LogDownloadSource {
-    return { connectionId: target.connectionId, path: streamPath(target).path, label, includePrevious: target.kind === 'container' && !!target.node.hasPrevious };
+    const p = streamPath(target);
+    return { connectionId: p.connectionId, path: p.path, label, includePrevious: target.kind === 'container' && !!target.node.hasPrevious };
   }
 
   /** Historique complet : `filtered` applique les filtres courants, sinon tout. */
@@ -581,7 +595,7 @@
     } else {
       const t = s.target as StreamTarget;
       sources = [sourceOf(t)];
-      name = t.kind === 'container' ? `${t.pod}-${t.container}` : t.topic;
+      name = t.kind === 'container' ? `${t.pod}-${t.container}` : t.kind === 'topic' ? t.topic : streamLabel(t);
     }
     try {
       const result = await api.downloadLogs({ defaultName: name, filtered, search, levels, sources });
@@ -652,7 +666,16 @@
       </select>
     </label>
 
-    {#if !isTopic}
+    {#if localFile && fileTarget}
+      <label class="flex items-center gap-1.5" title="Encodage du fichier (mémorisé pour ce fichier)">
+        Encodage
+        <select class="input py-0.5" aria-label="Encodage" onchange={(e) => localFiles.setEncoding(fileTarget, (e.currentTarget.value || undefined) as FileEncoding | undefined)}>
+          {#each ENCODINGS as enc (enc.value)}<option value={enc.value} selected={(fileTarget.encoding ?? '') === enc.value}>{enc.label}</option>{/each}
+        </select>
+      </label>
+    {/if}
+
+    {#if !isTopic && !fileTarget}
       <label class="flex items-center gap-1.5" class:opacity-50={!hasPrevious} title={hasPrevious ? 'Logs de l’instance précédente du conteneur' : 'Aucun redémarrage : pas de logs précédents'}>
         <input type="checkbox" checked={!!options.previous} disabled={!hasPrevious && !options.previous} onchange={(e) => setPrevious(e.currentTarget.checked)} />
         Précédent
@@ -676,7 +699,13 @@
         </div>
       {/if}
     </div>
-    <button type="button" class="btn" title="Copier un lien vers cette vue (sans secret), à coller dans Ocekour" onclick={() => share.copyLink(s)}>🔗 Lien</button>
+    <button
+      type="button"
+      class="btn"
+      disabled={localFile}
+      title={localFile ? 'Fichier local : pas de lien (chemin propre à ce poste). Utilisez « Exporter ».' : 'Copier un lien vers cette vue (sans secret), à coller dans Ocekour'}
+      onclick={() => share.copyLink(s)}>🔗 Lien</button
+    >
     <button
       type="button"
       class="btn py-0.5 text-xs"

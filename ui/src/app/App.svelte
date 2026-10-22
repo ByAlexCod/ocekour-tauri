@@ -13,6 +13,7 @@
   import TabBar from './logs/TabBar.svelte';
   import { tabsService as tabs } from './logs/tabs.service';
   import type { SettingsTab } from './settings/Settings.svelte';
+  import { localFiles } from './files/local-files.svelte';
   import { findLink } from './share/share-link';
   import { shareService } from './share/share.service';
   import Resizer from './shared/Resizer.svelte';
@@ -53,6 +54,7 @@
     if (!target) analytics.page('Accueil', 'accueil');
     else if (target.kind === 'container') analytics.page('Logs Rancher', 'logs/rancher');
     else if (target.kind === 'topic') analytics.page('Messages Kafka', 'logs/kafka');
+    else if (target.kind === 'file') analytics.page(target.connectionId ? 'Logs de sonde' : 'Fichier local', target.connectionId ? 'logs/sonde' : 'logs/fichier');
     else analytics.page('Explorateur S3', 's3');
   });
 
@@ -75,7 +77,10 @@
       return;
     }
     if (!(event.ctrlKey || event.metaKey) || view !== 'logs') return;
-    if (event.key.toLowerCase() === 'w') {
+    if (event.key.toLowerCase() === 'o' && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      void localFiles.pick(event.shiftKey);
+    } else if (event.key.toLowerCase() === 'w') {
       event.preventDefault();
       tabs.close();
     } else if (event.key === 'Tab' || event.key === 'PageDown' || event.key === 'PageUp') {
@@ -179,6 +184,8 @@
             <p>Sélectionnez un conteneur, un topic ou un bucket.</p>
             <p class="mt-3"><button type="button" class="btn" onclick={() => tabs.startAssembly()}>⊕ Nouvel assemblage</button></p>
             <p class="mt-1 text-xs">Un assemblage fusionne plusieurs pods / topics dans une vue triée dans le temps.</p>
+            <p class="mt-3"><button type="button" class="btn" onclick={() => localFiles.pick()}>📄 Ouvrir un fichier de logs…</button></p>
+            <p class="mt-1 text-xs">Ou glissez des fichiers sur la fenêtre (Ctrl+O).</p>
             <p class="mt-2 text-xs">Ctrl+clic ou clic milieu : nouvel onglet · Ctrl+W : fermer · Ctrl+Tab : onglet suivant</p>
           </div>
         {/if}

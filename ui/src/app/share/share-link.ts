@@ -5,7 +5,8 @@ import type { TabTarget } from '../logs/target';
 
 // Lien de partage `ocekour://open?d=<base64url JSON>` : de quoi rouvrir la même vue chez
 // un collègue (source, cible, options, filtres). JAMAIS de secret ni d'id local : la
-// connexion est retrouvée par son URL (Rancher, S3) ou ses brokers (Kafka).
+// connexion est retrouvée par son URL (Rancher, S3, sonde) ou ses brokers (Kafka). Un
+// fichier du poste n'est pas partageable (chemin propre à la machine).
 // `zod/mini` : quelques Ko dans l'interface, au lieu de ~450 Ko pour zod complet.
 
 const PREFIX = 'ocekour://open?d=';
@@ -48,6 +49,15 @@ export const ShareLinkSchema = z.discriminatedUnion('t', [
     t: z.literal('kafka'),
     brokers: z.array(Name).check(z.minLength(1), z.maxLength(50)),
     topic: Name,
+    options: Options,
+    filters: z.optional(Filters),
+  }),
+  z.object({
+    v: z.literal(1),
+    t: z.literal('sonde'),
+    url: z.url(),
+    source: Name,
+    file: z.optional(Name),
     options: Options,
     filters: z.optional(Filters),
   }),
@@ -129,6 +139,17 @@ export function linkFor(state: TabState, connection: Connection): ShareLink {
       filters,
     };
   }
+  if (target.kind === 'file' && connection.type === 'sonde') {
+    return {
+      v: 1,
+      t: 'sonde',
+      url: connection.url,
+      source: target.path[0],
+      ...(target.path[1] ? { file: target.path[1] } : {}),
+      options,
+      filters,
+    };
+  }
   if (target.kind === 'topic' && connection.type === 'kafka') {
     return { v: 1, t: 'kafka', brokers: connection.brokers, topic: target.topic, options, filters };
   }
@@ -177,6 +198,15 @@ export function stateFor(link: ShareLink, connection: Connection): TabState {
         container: link.container,
         workload: link.workload,
         node: { id: link.container, kind: 'container', expandable: false },
+      };
+      break;
+    case 'sonde':
+      target = {
+        kind: 'file',
+        connectionId: connection.id,
+        connectionName: connection.name,
+        path: link.file ? [link.source, link.file] : [link.source],
+        name: link.source,
       };
       break;
     case 'kafka':

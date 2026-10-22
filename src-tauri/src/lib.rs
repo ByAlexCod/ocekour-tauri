@@ -12,7 +12,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::webview::PageLoadEvent;
-use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 pub const MAIN_WINDOW: &str = "main";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -87,6 +87,7 @@ pub fn main() -> i32 {
             return 1;
         }
     };
+    if let Ok(cwd) = std::env::current_dir() { app.files.queue(ocekour_core::files::paths_in_args(&args, &cwd)); }
     run_window(app, ui);
     0
 }
@@ -96,7 +97,10 @@ fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>) {
     let built = tauri::Builder::default()
         // Un seul Ocekour à la fois : un second lancement remet la fenêtre au premier plan.
         // (Les modes sans interface ne passent pas par ici et peuvent tourner à côté.)
-        .plugin(tauri_plugin_single_instance::init(|handle, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|handle, args, cwd| {
+            // « Ouvrir avec Ocekour » alors qu'il tourne déjà : fichiers ouverts dans la fenêtre.
+            let paths = ocekour_core::files::paths_in_args(args.get(1..).unwrap_or_default(), std::path::Path::new(&cwd));
+            if !paths.is_empty() { let _ = handle.emit("files:open", paths); }
             if let Some(window) = handle.get_webview_window(MAIN_WINDOW) {
                 let _ = window.unminimize();
                 let _ = window.show();

@@ -134,8 +134,32 @@ export interface S3Draft extends DraftBase {
   buckets: string[];
 }
 
+export interface SondeDraft extends DraftBase {
+  type: 'sonde';
+  url: string;
+}
+
 /** Connexion en cours de saisie dans la fenêtre de connexion. */
-export type ConnectionDraft = RancherDraft | KafkaDraft | S3Draft;
+export type ConnectionDraft = RancherDraft | KafkaDraft | S3Draft | SondeDraft;
+
+/** Fichier (ou motif) de la section « Fichiers locaux ». */
+export interface LocalFile {
+  path: string;
+  name: string;
+  pattern: boolean;
+  favorite: boolean;
+  /** Le fichier (ou au moins un fichier du motif) existe. */
+  exists: boolean;
+  size?: number;
+  /** ISO 8601. */
+  modified?: string;
+  encoding?: FileEncoding;
+}
+
+export type FileEncoding = 'utf-8' | 'utf-16le' | 'utf-16be' | 'latin-1' | 'windows-1252';
+
+/** Id de la connexion réservée aux fichiers du poste. */
+export const LOCAL_CONNECTION = 'local';
 
 export type SourceErrorCode =
   'invalid' | 'unauthorized' | 'forbidden' | 'tls' | 'network' | 'timeout' | 'not-rancher' | 'http' | 'not-found';
@@ -163,7 +187,7 @@ export interface CaFileInfo {
   count: number;
 }
 
-export type NodeKind = 'namespace' | 'pod' | 'container' | 'topic' | 'bucket';
+export type NodeKind = 'namespace' | 'pod' | 'container' | 'topic' | 'bucket' | 'source' | 'pattern' | 'file';
 
 /** Élément de l'arborescence d'une source (sous le niveau cluster). */
 export interface SourceNode {
@@ -187,6 +211,9 @@ export interface SourceNode {
   hasPrevious?: boolean;
   /** Topic Kafka : nombre de partitions. */
   partitions?: number;
+  /** Fichier : taille (octets) et date de modification (ISO). */
+  size?: number;
+  modified?: string;
 }
 
 /** Chemin d'un nœud : connexion, puis cluster › namespace › pod › conteneur. */
@@ -227,6 +254,8 @@ export interface StreamOptions {
   sinceSeconds?: number;
   /** Logs de l'instance précédente du conteneur (après un redémarrage). */
   previous?: boolean;
+  /** Fichier : encodage imposé (sinon détecté, UTF-8 par défaut). */
+  encoding?: FileEncoding;
 }
 
 export type StreamState = 'connecting' | 'live' | 'reconnecting' | 'ended' | 'error';
@@ -458,6 +487,8 @@ export interface OcekourApi {
     /** Modifie les réglages de notifications (fusion partielle). */
     setNotifications(patch: DeepPartial<NotificationsConfig>): Promise<ConfigState>;
     /** Modifie les réglages du contexte IA (fusion partielle). */
+    /** Fichiers du poste visibles par les agents (liste remplacée). */
+    setFichiers(patch: { agents?: string[] }): Promise<ConfigState>;
     setContexte(patch: DeepPartial<ContextConfig>): Promise<ConfigState>;
     readText(): Promise<string>;
     validateText(text: string): Promise<ConfigError[]>;
@@ -501,6 +532,27 @@ export interface OcekourApi {
   sources: {
     /** Enfants d'un nœud ; `path` commence au cluster (`[clusterId]`). */
     browse(target: SourcePath): Promise<Result<SourceNode[]>>;
+  };
+  files: {
+    /** Favoris puis récents, avec leur état. */
+    list(): Promise<LocalFile[]>;
+    /** Boîte « Ouvrir » ; chemins choisis (vide si annulé). */
+    pick(): Promise<string[]>;
+    /** Fichier ou motif ouvert : en tête des récents. */
+    touch(path: string): Promise<LocalFile[]>;
+    favorite(path: string, favorite: boolean): Promise<LocalFile[]>;
+    forget(path: string): Promise<LocalFile[]>;
+    setEncoding(path: string, encoding: FileEncoding | null): Promise<LocalFile[]>;
+    /** Fichiers passés au lancement (ligne de commande), une seule fois. */
+    pending(): Promise<string[]>;
+    /** Fichiers à ouvrir (second lancement). */
+    onOpen(listener: (paths: string[]) => void): () => void;
+    /** Fichiers déposés sur la fenêtre (glisser-déposer depuis l'Explorateur). */
+    onDropped(listener: (paths: string[]) => void): () => void;
+  };
+  sonde: {
+    /** Empreinte du certificat présenté par la sonde (premier contact). */
+    fingerprint(url: string): Promise<Result<string>>;
   };
   streams: {
     /** Ouvre un flux sur un conteneur (`path` = cluster, namespace, pod, conteneur). */

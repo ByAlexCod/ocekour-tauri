@@ -3,12 +3,12 @@
   import type { CaFileInfo, Connection, ConnectionDraft, ConnectionType, KafkaDraft, RancherCluster, SourceErrorInfo, TlsOptions } from '../../../shared/api';
   import { errorMessage, notifications } from '../core/notification.svelte';
   import type { ConnectionPrefill } from './connection-dialog.service';
-  import { CONNECTION_TYPES, SECRET_LABELS, defaultName, splitList } from './connections';
+  import { CONNECTION_TYPES, SECRET_LABELS, defaultName, normalizeFingerprint, splitList } from './connections';
   import TlsField from './TlsField.svelte';
 
   type Status = { kind: 'idle' } | { kind: 'testing' } | { kind: 'ok'; summary: string } | { kind: 'error'; error: SourceErrorInfo };
 
-  /** Création / modification d'une connexion Rancher, Kafka ou S3. */
+  /** Création / modification d'une connexion Rancher, Kafka, S3 ou sonde. */
   let {
     connection = null,
     focusToken = false,
@@ -48,6 +48,10 @@
   let pathStyle = $state(true);
   let accessKeyId = $state('');
   let buckets = $state('');
+  /** Sonde : empreinte approuvée (saisie ou lue puis approuvée) et empreinte présentée. */
+  let fingerprint = $state('');
+  let presented = $state<string | null>(null);
+  let reading = $state(false);
   let status = $state<Status>({ kind: 'idle' });
   let saving = $state(false);
 
@@ -58,7 +62,8 @@
     const f = clusterFilter.toLowerCase();
     return (clusters ?? []).filter((c) => c.name.toLowerCase().includes(f) || c.id.toLowerCase().includes(f));
   });
-  const canTest = $derived(type === 'kafka' ? !!brokers.trim() : !!url.trim());
+  const approved = $derived(normalizeFingerprint(fingerprint));
+  const canTest = $derived(type === 'kafka' ? !!brokers.trim() : !!url.trim() && (type !== 'sonde' || !!approved || insecure));
   const canSave = $derived(!saving && !!name.trim() && canTest && (type !== 'rancher' || selected.size > 0) && (type !== 's3' || !!accessKeyId.trim()));
 
   onMount(async () => {
@@ -103,6 +108,10 @@
         registryInsecure = c.registry?.tls.insecure ?? false;
         registryCa = c.registry ? await readCa(c.registry.tls) : null;
         break;
+      case 'sonde':
+        url = c.url;
+        fingerprint = c.tls.fingerprint ?? '';
+        break;
       case 's3':
         url = c.url;
         region = c.region ?? '';
@@ -127,6 +136,8 @@
     const tls = (ins: boolean, info: CaFileInfo | null): TlsOptions => ({ insecure: ins, caFile: ins ? undefined : info?.path });
     const base = { id: connection?.id, name: name.trim(), secret: secret.trim() || undefined, tls: tls(insecure, ca) };
     switch (type) {
+      case 'sonde':
+        return { ...base, type: 'sonde', url: url.trim(), tls: { insecure, caFile: insecure ? undefined : ca?.path, fingerprint: insecure ? undefined : approved ?? undefined } };
       case 'rancher':
         return { ...base, type: 'rancher', url: url.trim(), clusters: [...selected].map(([id, n]) => ({ id, name: n })) };
       case 'kafka':
@@ -202,6 +213,21 @@
     }
   }
 
+  /** Sonde : empreinte du certificat présenté, à comparer avec celle de l'administrateur. */
+  async function readFingerprint() {
+    reading = true;
+    presented = null;
+    try {
+      const r = await window.ocekour!.sonde.fingerprint(url.trim());
+      if (r.ok) presented = r.value;
+      else status = { kind: 'error', error: r.error };
+    } catch (e) {
+      notifications.error(e);
+    } finally {
+      reading = false;
+    }
+  }
+
   async function save(event: SubmitEvent) {
     event.preventDefault();
     saving = true;
@@ -250,7 +276,7 @@
     <div class="grid grid-cols-[10rem_1fr] items-start gap-x-4 gap-y-4 overflow-y-auto px-5 py-4 text-sm">
       {#if isNew}
         <span class="pt-1.5 font-medium">Type</span>
-        <div class="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Type de connexion">
+        <div class="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Type de connexion">
           {#each CONNECTION_TYPES as t (t.type)}
             <button
               type="button"
@@ -290,8 +316,19 @@
           <input id="c-user" class="input" autocomplete="off" bind:value={username} />
         {/if}
       {:else}
-        <label for="c-url" class="pt-1.5 font-medium">{type === 'rancher' ? 'URL Rancher' : 'URL du S3'}</label>
-        <input id="c-url" class="input" type="url" placeholder={type === 'rancher' ? 'https://rancher.mon-entreprise.fr' : 'https://s3.mon-entreprise.fr'} bind:value={url} />
+        <label for="c-url" class="pt-1.5 font-medium">{type === 'rancher' ? 'URL Rancher' : type === 'sonde' ? 'Adresse de la sonde' : 'URL du S3'}</label>
+        <div>
+          <input
+            id="c-url"
+            class="input w-full"
+            type="url"
+            placeholder={type === 'rancher' ? 'https://rancher.mon-entreprise.fr' : type === 'sonde' ? 'https://srv-recette-01:47120' : 'https://s3.mon-entreprise.fr'}
+            bind:value={url}
+          />
+          {#if type === 'sonde'}
+            <p class="mt-1 text-xs text-slate-500">Adresse, empreinte et jeton sont donnés par l'administrateur de la machine (<code>sonde init</code>).</p>
+          {/if}
+        </div>
         {#if type === 's3'}
           <label for="c-access" class="pt-1.5 font-medium">Clé d'accès</label>
           <input id="c-access" class="input font-mono" autocomplete="off" bind:value={accessKeyId} />
@@ -318,7 +355,34 @@
         </div>
       {/if}
 
-      {#if type !== 'kafka' || protocol === 'SASL_SSL'}
+      {#if type === 'sonde'}
+        <label for="c-fingerprint" class="pt-1.5 font-medium">Empreinte du certificat</label>
+        <div class="space-y-2">
+          <div class="flex gap-2">
+            <input id="c-fingerprint" class="input flex-1 font-mono text-xs" placeholder="SHA256:9F:2C:…" autocomplete="off" bind:value={fingerprint} />
+            <button type="button" class="btn" disabled={!url.trim() || reading} onclick={readFingerprint}>{reading ? 'Lecture…' : 'Lire sur la sonde'}</button>
+          </div>
+          {#if fingerprint.trim() && !approved}
+            <p class="text-xs text-red-600">Empreinte invalide (64 chiffres hexadécimaux).</p>
+          {/if}
+          {#if presented}
+            {#if approved && presented === approved}
+              <p class="text-xs text-emerald-600">✓ La sonde présente bien ce certificat.</p>
+            {:else if approved}
+              <p role="alert" class="rounded bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
+                La sonde présente un autre certificat : <code>{presented}</code>. Ne l'approuvez qu'après vérification auprès de l'administrateur.
+              </p>
+            {:else}
+              <div class="rounded bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                <p>Certificat présenté : <code class="break-all">{presented}</code></p>
+                <p class="mt-1">Comparez-la avec l'empreinte donnée par l'administrateur avant de lui faire confiance.</p>
+                <button type="button" class="btn mt-2" onclick={() => (fingerprint = presented ?? '')}>Faire confiance à ce certificat</button>
+              </div>
+            {/if}
+          {/if}
+          <p class="text-xs text-slate-500">Seul ce certificat sera accepté : une machine qui se ferait passer pour la sonde est refusée.</p>
+        </div>
+      {:else if type !== 'kafka' || protocol === 'SASL_SSL'}
         <span class="pt-1 font-medium">Certificat SSL</span>
         <TlsField name="tls" bind:insecure bind:ca />
       {/if}
@@ -362,7 +426,7 @@
       {/if}
 
       <label for="c-name" class="pt-1.5 font-medium">Nom</label>
-      <input id="c-name" class="input" required placeholder={type === 'rancher' ? 'Rancher prod' : type === 'kafka' ? 'Kafka prod' : 'S3 prod'} bind:value={name} />
+      <input id="c-name" class="input" required placeholder={type === 'rancher' ? 'Rancher prod' : type === 'kafka' ? 'Kafka prod' : type === 'sonde' ? 'srv-recette-01' : 'S3 prod'} bind:value={name} />
 
       {#if type === 'rancher'}
         <span class="pt-1 font-medium">Clusters <span class="font-normal text-slate-500">({selected.size})</span></span>

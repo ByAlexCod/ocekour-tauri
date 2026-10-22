@@ -49,6 +49,18 @@ pub struct LocalFile {
 pub struct LocalFiles {
     file: PathBuf,
     state: Mutex<Stored>,
+    /// Fichiers passés au lancement, en attente de l'interface.
+    pending: Mutex<Vec<String>>,
+}
+
+/// Fichiers à ouvrir dans les arguments de la ligne de commande (chemins absolus, existants).
+pub fn paths_in_args(args: &[String], cwd: &Path) -> Vec<String> {
+    args.iter()
+        .filter(|a| !a.starts_with('-'))
+        .map(|a| cwd.join(a))
+        .filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect()
 }
 
 /// Nom affiché d'un chemin (dernier segment, motif compris).
@@ -57,8 +69,14 @@ pub fn display_name(path: &str) -> String { path.rsplit(['/', '\\']).next().unwr
 impl LocalFiles {
     pub fn new(file: PathBuf) -> LocalFiles {
         let state = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        LocalFiles { file, state: Mutex::new(state) }
+        LocalFiles { file, state: Mutex::new(state), pending: Mutex::new(Vec::new()) }
     }
+
+    /// Fichiers de la ligne de commande, à ouvrir quand l'interface sera prête.
+    pub fn queue(&self, paths: Vec<String>) { self.pending.lock().extend(paths); }
+
+    /// Fichiers en attente (vidés : chacun n'est ouvert qu'une fois).
+    pub fn take_pending(&self) -> Vec<String> { std::mem::take(&mut *self.pending.lock()) }
 
     fn save(&self, state: &Stored) {
         let text = serde_json::to_string_pretty(state).unwrap_or_default();

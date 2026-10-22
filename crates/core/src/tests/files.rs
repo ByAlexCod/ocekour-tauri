@@ -133,3 +133,17 @@ async fn agents_limites_a_la_liste_blanche() {
     let refused = call(app, "logs_exporter", json!({ "connexion": "local", "chemin": [secret], "fichier": out.to_string_lossy() })).await;
     assert!(refused.error && !out.exists());
 }
+
+#[test]
+fn fichiers_de_la_ligne_de_commande() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("app.log"), "x\n").unwrap();
+    let args = ["--data-dir=/tmp/x", "app.log", "absent.log", "."].map(String::from);
+    let found = crate::files::paths_in_args(&args, dir.path());
+    assert_eq!(found, vec![dir.path().join("app.log").to_string_lossy().into_owned()]);
+
+    let files = crate::files::LocalFiles::new(dir.path().join("fichiers.json"));
+    files.queue(found.clone());
+    assert_eq!(files.take_pending(), found);
+    assert!(files.take_pending().is_empty());
+}

@@ -9,6 +9,7 @@
   import { themeService } from '../core/theme.svelte';
   import { MODE_LABELS } from '../licence/Activation.svelte';
   import Accounts from './Accounts.svelte';
+  import AgentFilesSettings from './AgentFilesSettings.svelte';
   import ContextSettings from './ContextSettings.svelte';
   import DatabaseSettings from './DatabaseSettings.svelte';
   import McpSettings from './McpSettings.svelte';
@@ -117,6 +118,9 @@
 
         <span class="font-medium">Serveur MCP</span>
         <McpSettings />
+
+        <span class="font-medium">Fichiers pour les agents</span>
+        <AgentFilesSettings />
 
         <span class="font-medium">Journal</span>
         <div>

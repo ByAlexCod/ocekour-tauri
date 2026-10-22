@@ -44,7 +44,12 @@ class ShareService {
     const target = tab.target;
     // L'assemblage (plusieurs sources) n'est pas partageable par lien dans cette version.
     if (target.kind === 'assembly') return;
-    const connection = this.connections().find((c) => c.id === target.connectionId);
+    if (target.kind === 'file' && !target.connectionId) {
+      notifications.info('Fichier local : pas de lien de partage (chemin propre à ce poste). Utilisez « Exporter ».');
+      return;
+    }
+    const connectionId = target.connectionId;
+    const connection = this.connections().find((c) => c.id === connectionId);
     if (!connection) return;
     const link = encodeLink(linkFor(tabsService.stateOf(tab), connection));
     analytics.event({ category: 'Partage', action: 'Lien copié', name: connection.type });

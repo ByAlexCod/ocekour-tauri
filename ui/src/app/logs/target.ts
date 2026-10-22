@@ -1,4 +1,4 @@
-import type { SourceNode, SourcePath } from '../../../shared/api';
+import { type FileEncoding, LOCAL_CONNECTION, type SourceNode, type SourcePath, type StreamOptions } from '../../../shared/api';
 
 // Ce qu'un onglet affiche. Les conteneurs et les topics sont des flux (liste de lignes) ;
 // les buckets s'ouvrent dans l'explorateur.
@@ -30,7 +30,23 @@ export interface BucketTarget {
   bucket: string;
 }
 
-export type StreamTarget = ContainerTarget | TopicTarget;
+/** Fichier de logs : du poste (`connectionId` absent) ou exposé par une sonde. */
+export interface FileTarget {
+  kind: 'file';
+  /** Absent : fichier du poste ; sinon connexion de type sonde. */
+  connectionId?: string;
+  connectionName?: string;
+  /** Poste : [fichier ou motif, fichier du motif ?] ; sonde : [source, fichier du motif ?]. */
+  path: string[];
+  /** Nom affiché (fichier, motif, ou source de la sonde). */
+  name: string;
+  /** Motif (ou source de type motif) suivi sans fichier précis : le plus récent. */
+  pattern?: boolean;
+  /** Encodage imposé (fichier du poste). */
+  encoding?: FileEncoding;
+}
+
+export type StreamTarget = ContainerTarget | TopicTarget | FileTarget;
 
 /** Un membre d'un assemblage : une cible de flux, avec son étiquette et sa couleur. */
 export interface AssemblyMember {
@@ -80,12 +96,29 @@ export function targetKey(t: TabTarget): string {
       return `${t.connectionId}/${t.bucket}`;
     case 'assembly':
       return `assembly/${t.id}`;
+    case 'file':
+      return `file/${t.connectionId ?? LOCAL_CONNECTION}/${t.path.join('/')}`;
   }
+}
+
+/** Connexion d'une cible (`local` pour un fichier du poste). */
+export function connectionIdOf(t: StreamTarget | BucketTarget): string {
+  return t.kind === 'file' ? (t.connectionId ?? LOCAL_CONNECTION) : t.connectionId;
+}
+
+/** Dernier segment d'un chemin (Windows ou Unix). */
+export function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() || path;
 }
 
 /** Libellé court d'une cible de flux (badge de source, onglet). */
 export function streamLabel(t: StreamTarget): string {
-  return t.kind === 'container' ? t.container : t.topic;
+  return t.kind === 'container' ? t.container : t.kind === 'topic' ? t.topic : fileTitle(t);
+}
+
+/** Titre d'un onglet de fichier : le fichier choisi dans un motif, sinon le nom. */
+function fileTitle(t: FileTarget): string {
+  return t.path.length > 1 ? t.path[t.path.length - 1] : t.name;
 }
 
 /** Titre court (onglet) et complément (pod, connexion). */
@@ -102,6 +135,8 @@ export function targetTitle(t: TabTarget): { title: string; subtitle: string } {
         title: t.name || `Assemblage (${t.members.length})`,
         subtitle: `${t.members.length} source${t.members.length > 1 ? 's' : ''}`,
       };
+    case 'file':
+      return { title: fileTitle(t), subtitle: t.connectionName ?? 'fichier local' };
   }
 }
 
@@ -116,18 +151,41 @@ export function targetPath(t: TabTarget): string[] {
       return [t.connectionName, t.bucket];
     case 'assembly':
       return [t.name || `Assemblage (${t.members.length})`];
+    case 'file':
+      return t.connectionId ? [t.connectionName ?? t.connectionId, ...t.path] : t.path;
   }
+}
+
+/** Nom de fichier sans date ni numéro de rotation (profil commun à tous les jours). */
+export function fileProfileName(name: string): string {
+  return name
+    .replace(/\.gz$/, '')
+    .replace(/[-_.]\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/[-_.]?\d{4}-\d\d-\d\d|[-_.]?\d{8}|\.\d+$|-\d+(\.)/g, '$1');
 }
 
 /** Clé des profils de config.yaml : `cluster/namespace/workload` ou `kafka/<connexion>/<topic>`. */
 export function profileKey(t: StreamTarget): string {
-  return t.kind === 'container'
-    ? `${t.clusterName}/${t.namespace}/${t.workload}`
-    : `kafka/${t.connectionName}/${t.topic}`;
+  switch (t.kind) {
+    case 'container':
+      return `${t.clusterName}/${t.namespace}/${t.workload}`;
+    case 'topic':
+      return `kafka/${t.connectionName}/${t.topic}`;
+    case 'file':
+      // Mêmes clés que le cœur (outils MCP).
+      return t.connectionId ? `sonde/${t.connectionName}/${t.path[0]}` : `fichier/${fileProfileName(baseName(t.path[t.path.length - 1]))}`;
+  }
+}
+
+/** Options d'ouverture d'un flux : l'encodage choisi pour un fichier en plus. */
+export function streamOptions(t: StreamTarget, options: StreamOptions): StreamOptions {
+  return t.kind === 'file' && t.encoding ? { ...options, encoding: t.encoding } : options;
 }
 
 /** Chemin côté main (`streams.open`). */
 export function streamPath(t: StreamTarget): SourcePath {
+  if (t.kind === 'file') return { connectionId: t.connectionId ?? LOCAL_CONNECTION, path: t.path };
   return t.kind === 'container'
     ? {
         connectionId: t.connectionId,

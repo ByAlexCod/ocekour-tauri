@@ -27,13 +27,21 @@ function on<T>(event: string, listener: (payload: T) => void): () => void {
 
 /** Chemins des derniers fichiers déposés sur la fenêtre (glisser-déposer depuis l'Explorateur). */
 let dropped: string[] = [];
+const dropListeners = new Set<(paths: string[]) => void>();
 
 export function installDropTracking() {
   void import('@tauri-apps/api/webview').then(({ getCurrentWebview }) =>
     getCurrentWebview().onDragDropEvent((e) => {
-      if (e.payload.type === 'drop') dropped = e.payload.paths;
+      if (e.payload.type !== 'drop') return;
+      dropped = e.payload.paths;
+      for (const l of dropListeners) l(dropped);
     }),
   );
+}
+
+function onDropped(listener: (paths: string[]) => void): () => void {
+  dropListeners.add(listener);
+  return () => dropListeners.delete(listener);
 }
 
 /** Chemin local d'un fichier déposé : retrouvé par son nom parmi les derniers déposés. */
@@ -49,6 +57,7 @@ export function tauriApi(): OcekourApi {
       setPreferences: (patch) => call('config:setPreferences', patch),
       setNotifications: (patch) => call('config:setNotifications', patch),
       setContexte: (patch) => call('config:setContexte', patch),
+      setFichiers: (patch) => call('config:setFichiers', patch),
       readText: () => call('config:readText'),
       validateText: (text) => call('config:validateText', text),
       saveText: (text) => call('config:saveText', text),
@@ -76,6 +85,18 @@ export function tauriApi(): OcekourApi {
       delete: (id) => call('databases:delete', id),
     },
     sources: { browse: (target) => call('sources:browse', target) },
+    files: {
+      list: () => call('files:list'),
+      pending: () => call('files:pending'),
+      pick: () => call('files:pick'),
+      touch: (path) => call('files:touch', path),
+      favorite: (path, favorite) => call('files:favorite', path, favorite),
+      forget: (path) => call('files:forget', path),
+      setEncoding: (path, encoding) => call('files:setEncoding', path, encoding),
+      onOpen: (listener) => on<string[]>('files:open', listener),
+      onDropped,
+    },
+    sonde: { fingerprint: (url) => call('sonde:fingerprint', url) },
     streams: {
       open: (target, options) => call('streams:open', target, options),
       close: (id) => call('streams:close', id),

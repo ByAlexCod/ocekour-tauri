@@ -111,3 +111,39 @@ describe('lien de partage', () => {
     expect(findLink('rien')).toBeUndefined();
   });
 });
+
+describe('liens de partage — sonde', () => {
+  const sonde = ConnectionSchema.parse({
+    id: 'sonde-1',
+    type: 'sonde',
+    name: 'srv-recette',
+    url: 'https://srv-recette:47120/',
+    tls: { insecure: false, fingerprint: 'SHA256:AB' },
+  }) as Connection;
+
+  it('aller-retour d’un fichier de motif, sans jeton ni empreinte', () => {
+    const state: TabState = {
+      target: { kind: 'file', connectionId: 'sonde-1', connectionName: 'srv-recette', path: ['batch', 'batch-2.log'], name: 'batch' },
+      options: { follow: true, tailLines: 500 },
+      search: { text: 'ERROR', caseSensitive: false, regex: false },
+    };
+    const text = encodeLink(linkFor(state, sonde));
+    const link = decodeLink(`voici : ${text} merci`);
+    expect(link).toMatchObject({ t: 'sonde', url: 'https://srv-recette:47120/', source: 'batch', file: 'batch-2.log' });
+    expect(text).not.toContain('SHA256');
+    const other = { ...sonde, id: 'sonde-2' } as Connection;
+    expect(findConnection(link, [rancher, other])?.id).toBe('sonde-2');
+    expect(stateFor(link, other)).toMatchObject({
+      target: { kind: 'file', connectionId: 'sonde-2', path: ['batch', 'batch-2.log'] },
+      options: { follow: true, tailLines: 500 },
+      search: { text: 'ERROR' },
+    });
+    expect(findLink(text)).toBe(text);
+  });
+
+  it('source entière (sans fichier)', () => {
+    const link = linkFor({ target: { kind: 'file', connectionId: 'sonde-1', path: ['api'], name: 'API' } }, sonde);
+    expect(link).toEqual({ v: 1, t: 'sonde', url: 'https://srv-recette:47120/', source: 'api', options: { follow: true }, filters: undefined });
+    expect(stateFor(decodeLink(encodeLink(link)), sonde).target).toMatchObject({ path: ['api'] });
+  });
+});

@@ -1,4 +1,4 @@
-import type { SourcePath } from '../../../shared/api';
+import { LOCAL_CONNECTION, type SourcePath } from '../../../shared/api';
 import { configService } from '../core/config.svelte';
 import { licence } from '../core/licence.svelte';
 import { type NodeState, nodeKey, parseKey } from './source-tree.service';
@@ -40,7 +40,7 @@ class SourceTreeService {
         if (!connections || !licence.active) return;
         const toggled = this.toggled;
         const nodes = this.nodes;
-        const ids = new Set(connections.map((c) => c.id));
+        const ids = new Set([LOCAL_CONNECTION, ...connections.map((c) => c.id)]);
         for (const c of connections) {
           const root = { connectionId: c.id, path: [] };
           if (c.type !== 'rancher' && this.isExpanded(root) && !nodes.has(c.id)) void this.load(root);

@@ -69,7 +69,7 @@ function builder(input: TreeInput) {
     const [clusterId, namespace] = parent.path;
     const base = `${parent.connectionId}/${clusterId}`;
     const favoriteKeyOf = (node: SourceNode) =>
-      node.kind === 'topic' || node.kind === 'bucket'
+      node.kind === 'topic' || node.kind === 'bucket' || ((node.kind === 'source' || node.kind === 'pattern') && !parent.path.length)
         ? `${parent.connectionId}/${node.id}`
         : node.kind === 'namespace'
           ? `${base}/${node.id}`
@@ -218,7 +218,7 @@ export function favoriteRows(input: TreeInput): Row[] {
           key: `★${favorite}`,
           target,
           depth: 0,
-          kind: connection.type === 'kafka' ? 'topic' : 'bucket',
+          kind: connection.type === 'kafka' ? 'topic' : connection.type === 'sonde' ? 'source' : 'bucket',
           label: leaf,
           detail: connection.name,
           expandable: false,

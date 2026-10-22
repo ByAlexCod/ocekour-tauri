@@ -1,5 +1,5 @@
 import { computed, effect, signal, untracked } from '../core/signals.svelte';
-import type { StreamOptions } from '../../../shared/api';
+import { LOCAL_CONNECTION, type StreamOptions } from '../../../shared/api';
 import { configService } from '../core/config.svelte';
 import { licence } from '../core/licence.svelte';
 import { ExplorerSession } from '../explorer/explorer-session';
@@ -12,6 +12,8 @@ import {
   ASSEMBLY_COLORS,
   type AssemblyMember,
   type AssemblyTarget,
+  type BucketTarget,
+  connectionIdOf,
   MAX_ASSEMBLY_MEMBERS,
   migrateTarget,
   profileKey,
@@ -259,12 +261,16 @@ export class TabsService {
    * garde que les membres joignables ; l'onglet est abandonné s'il n'en reste aucun.
    */
   private keepReachable(state: TabState, connections: Set<string>): TabState | undefined {
+    const reachable = (t: StreamTarget | BucketTarget) => {
+      const id = connectionIdOf(t);
+      return id === LOCAL_CONNECTION || connections.has(id);
+    };
     if (state.target.kind === 'assembly') {
-      const members = state.target.members.filter((m) => connections.has(m.target.connectionId));
+      const members = state.target.members.filter((m) => reachable(m.target));
       if (!members.length) return undefined;
       return { ...state, target: { ...state.target, members } };
     }
-    return connections.has(state.target.connectionId) ? state : undefined;
+    return reachable(state.target) ? state : undefined;
   }
 }
 

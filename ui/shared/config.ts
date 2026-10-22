@@ -10,6 +10,8 @@ const TlsSchema = z.object({
   insecure: z.boolean().default(false),
   /** Certificat d'autorité (.cer / .crt / .pem, DER ou PEM). */
   caFile: z.string().optional(),
+  /** Certificat épinglé par son empreinte SHA-256 (sonde). */
+  fingerprint: z.string().optional(),
 });
 
 const RancherConnectionSchema = z.object({
@@ -55,11 +57,24 @@ const S3ConnectionSchema = z.object({
   buckets: z.array(z.string().min(1)).default([]),
 });
 
+/** Sonde distante : le poste s'y connecte (secret = jeton de la sonde). */
+const SondeConnectionSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('sonde'),
+  name: z.string().min(1),
+  url: z.url(),
+  tls: TlsSchema.default({ insecure: false }),
+});
+
 export const ConnectionSchema = z.discriminatedUnion('type', [
   RancherConnectionSchema,
   KafkaConnectionSchema,
   S3ConnectionSchema,
+  SondeConnectionSchema,
 ]);
+
+/** Fichiers du poste que les agents peuvent lire (chemins ou motifs). */
+export const FichiersSchema = z.object({ agents: z.array(z.string().min(1)).default([]) });
 
 /** Services accessibles aux agents via le MCP (un par type ; jeton dans secrets.json). */
 export const SERVICE_IDS = ['gitlab', 'jira', 'confluence', 'rocketchat'] as const;
@@ -253,6 +268,7 @@ export const ConfigSchema = PreferencesSchema.extend({
   web: WebSchema.default(() => WebSchema.parse({})),
   /** Bases de données consultables (lecture seule) par les agents via les outils MCP bdd_*. */
   databases: z.array(DatabaseSchema).default([]),
+  fichiers: FichiersSchema.default(() => FichiersSchema.parse({})),
 });
 
 export type Theme = z.infer<typeof ThemeSchema>;
@@ -261,6 +277,7 @@ export type Connection = z.infer<typeof ConnectionSchema>;
 export type RancherConnection = z.infer<typeof RancherConnectionSchema>;
 export type KafkaConnection = z.infer<typeof KafkaConnectionSchema>;
 export type S3Connection = z.infer<typeof S3ConnectionSchema>;
+export type SondeConnection = z.infer<typeof SondeConnectionSchema>;
 export type ConnectionType = Connection['type'];
 export type ServiceId = z.infer<typeof ServiceIdSchema>;
 export type ServiceConfig = z.infer<typeof ServiceSchema>;

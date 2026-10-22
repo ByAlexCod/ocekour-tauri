@@ -121,6 +121,7 @@ async fn dispatch(app: &Arc<App>, caller: &Caller, channel: &str, args: &[Value]
 
         // --- Fichiers du poste ------------------------------------------------------------------
         "files:list" => to_value(app.files.list()),
+        "files:pending" => to_value(app.files.take_pending()),
         "files:pick" => {
             let picked = app.ui.open_dialog(OpenOptions {
                 title: "Ouvrir un fichier de logs".into(),
