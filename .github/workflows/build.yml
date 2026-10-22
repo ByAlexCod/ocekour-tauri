@@ -32,7 +32,7 @@ jobs:
           java-version: 21
       - name: Dépendances système (installées seulement si absentes)
         run: |
-          missing=$(for p in libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev python3-venv curl postgresql-client; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
+          missing=$(for p in build-essential pkg-config file curl libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev python3-venv postgresql-client; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
           if [ -n "$missing" ]; then
             if ! sudo -n true 2>/dev/null; then echo "::error::Paquets à installer sur le runner : $missing"; exit 1; fi
             sudo apt-get update && sudo apt-get install -y $missing
@@ -75,10 +75,18 @@ jobs:
         if: always()
         run: docker rm -f ocekour-ci-pg >/dev/null 2>&1 || true
 
-  # Exe Windows : un seul ocekour.exe (WebView2 du système), plus l'installateur NSIS.
+  # Exe Windows et installateur NSIS, compilés depuis Linux sur le runner auto-hébergé : cible
+  # MSVC avec cargo-xwin (méthode documentée par Tauri), même résultat qu'une compilation sous
+  # Windows (un seul exe, chargeur WebView2 intégré). Compilation gardée d'un run à l'autre.
   windows:
     needs: tests
-    runs-on: windows-latest
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, Linux, X64]
+    env:
+      CI_DIR: ${{ github.workspace }}/../.ocekour-ci
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../.ocekour-ci/target
+      # SDK Windows et CRT de Microsoft, téléchargés une fois par cargo-xwin.
+      XWIN_CACHE_DIR: ${{ github.workspace }}/../.ocekour-ci/xwin
     steps:
       - name: Secret LICENCE_OBFUSCATION présent
         shell: bash
@@ -89,47 +97,54 @@ jobs:
           fi
         env:
           LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
-      # Defender analyse chaque fichier écrit par cargo : compilation nettement plus lente.
-      - name: Analyse antivirus en temps réel désactivée (runner jetable)
-        shell: pwsh
-        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      # Cache gardé même si le job échoue : sinon il n'est jamais rempli tant qu'un build échoue.
-      - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
+          targets: x86_64-pc-windows-msvc
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
+      - name: Outils de compilation Windows (installés seulement s'ils manquent)
+        run: |
+          missing=$(for c in cc:build-essential makensis:nsis clang:clang lld-link:lld llvm-rc:llvm; do command -v "${c%%:*}" >/dev/null || echo "${c##*:}"; done)
+          if [ -n "$missing" ]; then
+            if ! sudo -n true 2>/dev/null; then echo "::error::Paquets à installer sur le runner : $missing"; exit 1; fi
+            sudo apt-get update && sudo apt-get install -y $missing
+          fi
+          command -v cargo-xwin >/dev/null || cargo install cargo-xwin --locked
       - run: npm ci
         working-directory: ui
-      - name: Construction (tauri build)
-        run: node ui/node_modules/@tauri-apps/cli/tauri.js build
+      - name: Ocekour.exe et installateur (tauri build)
+        run: |
+          node ui/node_modules/@tauri-apps/cli/tauri.js build --runner cargo-xwin --target x86_64-pc-windows-msvc
+          # Copiés tout de suite : l'étape suivante recompile ocekour.exe.
+          OUT="$CARGO_TARGET_DIR/x86_64-pc-windows-msvc/release"
+          rm -rf package && mkdir -p package/docs
+          cp "$OUT/ocekour.exe" package/Ocekour.exe
+          cp "$OUT"/bundle/nsis/*.exe package/
         env:
           # Exe diffusé : clés d'activation de production seulement (docs/cles-activation.md).
           OCEKOUR_RELEASE: '1'
           LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
-      # Mêmes paquets et options que tauri build : les dépendances déjà compilées sont réutilisées
-      # (seul ocekour-headless est compilé ; un `-p ocekour-headless` seul recompilerait tout).
-      - name: ocekour-headless.exe (serveur MCP / notifications sans WebView2)
-        run: cargo build --release -p ocekour -p ocekour-headless --features ocekour/custom-protocol
+      # Mêmes paquets et options que tauri build : les dépendances déjà compilées sont réutilisées.
+      - name: ocekour-headless.exe (sonde, serveur MCP / notifications sans WebView2)
+        run: cargo xwin build --release --target x86_64-pc-windows-msvc -p ocekour -p ocekour-headless --features ocekour/custom-protocol
         env:
           OCEKOUR_RELEASE: '1'
           LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
-      - name: Paquet à diffuser (exe + docs)
-        shell: bash
+      - name: Paquet à diffuser (gardé sur le runner)
         run: |
           VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          mkdir -p package/docs
-          cp target/release/ocekour.exe package/Ocekour.exe
-          cp target/release/ocekour-headless.exe package/
-          cp target/release/bundle/nsis/*.exe package/ || true
-          cp docs/guide/*.md package/docs/ 2>/dev/null || true
+          cp "$CARGO_TARGET_DIR/x86_64-pc-windows-msvc/release/ocekour-headless.exe" package/
+          cp docs/guide/*.md package/docs/
+          file package/Ocekour.exe | grep -q 'PE32+ executable (GUI) x86-64'
+          DEST="$CI_DIR/livraisons/Ocekour-$VERSION-${GITHUB_SHA::7}"
+          mkdir -p "$DEST" && cp -r package/. "$DEST/"
+          echo "Paquet Windows gardé sur le runner : $(realpath "$DEST")" >> "$GITHUB_STEP_SUMMARY"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      # Copie sur GitHub en plus, si le quota d'artefacts le permet.
       - uses: actions/upload-artifact@v5
+        continue-on-error: true
         with:
           name: Ocekour-${{ env.VERSION }}
           path: package/
@@ -160,11 +175,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl
-      - name: musl-gcc (ring), installé seulement s'il est absent
+      - name: musl-gcc (ring) et compilateur C, installés seulement s'ils manquent
         run: |
-          if ! command -v musl-gcc >/dev/null; then
-            if ! sudo -n true 2>/dev/null; then echo "::error::Paquet à installer sur le runner : musl-tools"; exit 1; fi
-            sudo apt-get update && sudo apt-get install -y musl-tools
+          missing=$(for c in cc:build-essential musl-gcc:musl-tools file:file; do command -v "${c%%:*}" >/dev/null || echo "${c##*:}"; done)
+          if [ -n "$missing" ]; then
+            if ! sudo -n true 2>/dev/null; then echo "::error::Paquets à installer sur le runner : $missing"; exit 1; fi
+            sudo apt-get update && sudo apt-get install -y $missing
           fi
       - name: ocekour-headless (statique)
         run: cargo build --release -p ocekour-headless --target x86_64-unknown-linux-musl

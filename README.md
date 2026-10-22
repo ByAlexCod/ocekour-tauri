@@ -71,8 +71,21 @@ Les tests utilisent de vrais serveurs quand ils sont présents (sinon ils sont i
 | `BDD_TEST_PG`              | PostgreSQL (`scripts/pg-test-fixture.sql`)                      |
 | `OCEKOUR_BROWSER_PATH`     | Chrome/Chromium/Edge pour les outils `web_*`                    |
 
-La CI (`.github/workflows/build.yml`) lance tous les tests sous Linux avec ces serveurs, puis
-construit sous Windows `Ocekour.exe`, `ocekour-headless.exe` et l'installateur, avec
-les clés d'activation de production (`OCEKOUR_RELEASE=1`, secret `LICENCE_OBFUSCATION`).
+La CI (`.github/workflows/build.yml`) tourne sur un **runner Linux auto-hébergé**
+(`self-hosted, Linux, X64` ; jamais pour une pull request, le dépôt étant public). Elle lance
+tous les tests avec ces serveurs, puis construit, toujours sous Linux, `Ocekour.exe`,
+`ocekour-headless.exe` et l'installateur pour Windows (cible MSVC, `cargo-xwin`), et la sonde
+Linux statique (musl), avec les clés d'activation de production (`OCEKOUR_RELEASE=1`, secret
+`LICENCE_OBFUSCATION`). Les paquets sont aussi gardés sur le runner, à côté de son dossier de
+travail : `.ocekour-ci/livraisons/` (compilation et caches dans `.ocekour-ci/`, à vider si le
+disque se remplit).
+
+Prérequis du runner (Ubuntu 22.04+ / Debian 12+), Docker en option (tests PostgreSQL) :
+
+```bash
+sudo apt-get install -y build-essential pkg-config file curl \
+  libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+  python3-venv postgresql-client musl-tools nsis clang lld llvm
+```
 
 En développement, une clé : `cargo run -p ocekour-headless -- cle generer --kid dev --label Dev --mode none`.
