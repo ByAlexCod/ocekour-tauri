@@ -10,10 +10,11 @@ et double-cliquez sur `Ocekour.exe`. Gardez ensemble les fichiers du dossier.
 - Windows 10 ou 11, 64 bits.
 - Aucun droit administrateur requis, aucun accès Internet nécessaire.
 - L'affichage utilise **Microsoft Edge WebView2**, présent sur Windows 11 et sur la plupart des
-  Windows 10. S'il manque, Ocekour essaie les composants du navigateur **Edge** installé sur le
-  poste. Sinon, un message indique quoi faire : faire installer « Microsoft Edge WebView2
-  Runtime », ou copier le runtime « Fixed Version » de Microsoft dans un dossier `WebView2\` à
-  côté de l'exe (sans installation).
+  Windows 10. S'il manque (poste hors ligne ou sans droits d'installation), Ocekour s'affiche
+  avec le **navigateur Edge** du poste, dans une fenêtre dédiée sans onglets ni barre d'adresse :
+  mêmes fonctions, rien à installer. Seule différence : le glisser-déposer de fichiers n'y est
+  pas disponible (Ctrl+O, ou « Envoyer… » dans S3). Fermer cette fenêtre ferme Ocekour.
+- Pour forcer cet affichage : `Ocekour.exe --navigateur`.
 - `ocekour-headless.exe`, livré à côté, offre les modes sans interface (`--mcp`, `--mcp-http`,
   `--notify`, la [sonde](sonde.md)) sans dépendre de WebView2 ; `Ocekour.exe --mcp` fonctionne
   aussi.

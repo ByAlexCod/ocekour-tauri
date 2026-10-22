@@ -32,6 +32,17 @@ tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
+# Mode Edge (WebView2 indisponible) : serveur local de l'interface, et ce que les plugins
+# Tauri apportent à la fenêtre (mêmes bibliothèques, déjà compilées pour eux).
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1"] }
+http-body-util = "0.1"
+bytes = "1"
+tokio-stream = "0.1"
+parking_lot = "0.12"
+rfd = { version = "0.16", default-features = false }
+arboard = { version = "3", default-features = false }
+notify-rust = { version = "4", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }

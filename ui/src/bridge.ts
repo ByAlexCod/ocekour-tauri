@@ -4,15 +4,21 @@ import type { OcekourApi } from '../shared/api';
 
 // Pont entre l'interface et le cœur Rust : chaque méthode de `OcekourApi` appelle le canal
 // du même nom que la version Electron (`call(canal, arguments)`), et les événements du cœur
-// arrivent par `listen`. Le reste de l'interface ne voit que `window.ocekour`.
+// arrivent par `on`. Le reste de l'interface ne voit que `window.ocekour`.
+//
+// Deux transports : la fenêtre Tauri (`invoke` / `listen`), ou le mode Edge, quand WebView2
+// n'est pas utilisable (`POST /api/call` et Server-Sent Events sur `/api/events`).
 
-const call = <T>(channel: string, ...args: unknown[]): Promise<T> =>
+type Call = <T>(channel: string, ...args: unknown[]) => Promise<T>;
+type On = <T>(event: string, listener: (payload: T) => void) => () => void;
+
+const tauriCall: Call = <T>(channel: string, ...args: unknown[]): Promise<T> =>
   invoke<T>('call', { channel, args }).catch((e: unknown) => {
     throw e instanceof Error ? e : new Error(String(e));
   });
 
 /** Abonnement à un événement du cœur ; renvoie la fonction de désabonnement. */
-function on<T>(event: string, listener: (payload: T) => void): () => void {
+const tauriOn: On = <T>(event: string, listener: (payload: T) => void): (() => void) => {
   let stop: (() => void) | undefined;
   let stopped = false;
   void listen<T>(event, (e) => listener(e.payload)).then((unlisten) => {
@@ -23,7 +29,32 @@ function on<T>(event: string, listener: (payload: T) => void): () => void {
     stopped = true;
     stop?.();
   };
-}
+};
+
+/** Mode Edge : même canal `call`, en HTTP vers le serveur local de l'exe (cookie de session). */
+const httpCall: Call = async <T>(channel: string, ...args: unknown[]): Promise<T> => {
+  const response = await fetch('/api/call', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ channel, args }),
+  });
+  const body: unknown = await response.json().catch(() => null);
+  if (response.ok) return body as T;
+  const message = (body as { error?: unknown } | null)?.error;
+  throw new Error(typeof message === 'string' ? message : `Ocekour ne répond plus (HTTP ${response.status}) : relancez-le.`);
+};
+
+/** Mode Edge : une seule connexion d'événements, partagée par tous les abonnements. */
+let source: EventSource | undefined;
+const httpOn: On = <T>(event: string, listener: (payload: T) => void): (() => void) => {
+  source ??= new EventSource('/api/events');
+  const handler = (e: Event) => listener(JSON.parse((e as MessageEvent<string>).data) as T);
+  source.addEventListener(event, handler);
+  return () => source?.removeEventListener(event, handler);
+};
+
+/** Interface servie par l'exe en mode Edge (WebView2 indisponible). */
+export const isHttpMode = () => location.protocol === 'http:' && location.hostname === '127.0.0.1';
 
 /** Chemins des derniers fichiers déposés sur la fenêtre (glisser-déposer depuis l'Explorateur). */
 let dropped: string[] = [];
@@ -50,7 +81,10 @@ export function pathForFile(file: File): string {
   return dropped.find((p) => p.split(/[\\/]/).pop() === name) ?? '';
 }
 
-export function tauriApi(): OcekourApi {
+export const tauriApi = (): OcekourApi => makeApi(tauriCall, tauriOn);
+export const httpApi = (): OcekourApi => makeApi(httpCall, httpOn);
+
+function makeApi(call: Call, on: On): OcekourApi {
   return {
     config: {
       get: () => call('config:get'),

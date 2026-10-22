@@ -3,6 +3,7 @@
 //! recevoir ses événements ; les modes sans interface (`--mcp`, `--mcp-http`, `--notify`)
 //! n'ouvrent aucune fenêtre et ne chargent pas WebView2.
 
+pub mod browser;
 mod ui;
 pub mod webview2;
 
@@ -59,13 +60,25 @@ pub fn main() -> i32 {
     }
     let dir = headless::data_dir(&args);
     let mode = headless::parse_mode(&args);
-    // Fenêtre : WebView2 vérifié (et runtime livré à côté de l'exe pris en compte) avant de
-    // lancer le moindre fil.
-    #[cfg(windows)]
+    // Fenêtre : WebView2 (Tauri), vérifié avant de lancer le moindre fil ; s'il n'est pas
+    // utilisable, Edge en mode application (`--navigateur` pour le forcer).
+    let mut edge: Option<std::path::PathBuf> = None;
     if mode.is_none() {
-        if let Err(message) = webview2::prepare() {
-            webview2::alert(message);
-            return 1;
+        let forced = args.iter().any(|a| a == "--navigateur");
+        #[cfg(windows)]
+        let missing = !forced && webview2::prepare().is_err();
+        #[cfg(not(windows))]
+        let missing = false;
+        if forced || missing {
+            match browser::find_browser() {
+                Some(path) => edge = Some(path),
+                None => {
+                    #[cfg(windows)]
+                    webview2::alert(webview2::MISSING);
+                    eprintln!("{}", webview2::MISSING);
+                    return 1;
+                }
+            }
         }
     }
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime tokio");
@@ -86,11 +99,29 @@ pub fn main() -> i32 {
     }
 
     ocekour_core::logging::init(&dir, cfg!(debug_assertions));
-    tauri::async_runtime::set(runtime.handle().clone());
-    let ui = Arc::new(ui::TauriUi::default());
     // Le fil principal (boucle de la fenêtre) reste dans le contexte tokio : le cœur y lance
     // ses tâches (serveur MCP, notifications) depuis les rappels de Tauri.
     let _guard = runtime.enter();
+    // Une seule fois : l'interface intégrée à l'exe sert aux deux modes.
+    let context = tauri::generate_context!();
+    let files = std::env::current_dir().map(|cwd| ocekour_core::files::paths_in_args(&args, &cwd)).unwrap_or_default();
+
+    if let Some(browser) = edge {
+        let ui = Arc::new(browser::BrowserUi::default());
+        let app = match App::new(AppOptions::new(&dir, VERSION, ui.clone())) {
+            Ok(app) => app,
+            Err(e) => {
+                log::error!("Démarrage impossible : {e}");
+                return 1;
+            }
+        };
+        app.files.queue(files);
+        let assets: browser::Assets = Box::leak(Box::new(context)).assets();
+        return runtime.block_on(browser::run(app, ui, assets, browser, dir.join("edge")));
+    }
+
+    tauri::async_runtime::set(runtime.handle().clone());
+    let ui = Arc::new(ui::TauriUi::default());
     let app = match App::new(AppOptions::new(&dir, VERSION, ui.clone())) {
         Ok(app) => app,
         Err(e) => {
@@ -98,12 +129,12 @@ pub fn main() -> i32 {
             return 1;
         }
     };
-    if let Ok(cwd) = std::env::current_dir() { app.files.queue(ocekour_core::files::paths_in_args(&args, &cwd)); }
-    run_window(app, ui);
+    app.files.queue(files);
+    run_window(app, ui, context);
     0
 }
 
-fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>) {
+fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>, context: tauri::Context<tauri::Wry>) {
     let core = app.clone();
     let built = tauri::Builder::default()
         // Un seul Ocekour à la fois : un second lancement remet la fenêtre au premier plan.
@@ -132,7 +163,7 @@ fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>) {
             core.start_background();
             Ok(())
         })
-        .build(tauri::generate_context!());
+        .build(context);
     let tauri_app = match built {
         Ok(a) => a,
         Err(e) => {

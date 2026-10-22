@@ -15,9 +15,11 @@
 
 **Windows 10 sans WebView2**
 
-- Si le runtime WebView2 manque, Ocekour utilise les composants du navigateur Edge installé, ou
-  un runtime « Fixed Version » copié dans un dossier `WebView2\` à côté de l'exe (sans
-  installation). Message clair si aucun n'est utilisable.
+- Si WebView2 n'est pas utilisable, Ocekour s'affiche avec le navigateur Edge du poste, en
+  fenêtre dédiée (mode application) : rien à installer, aucun accès Internet nécessaire.
+  `--navigateur` force cet affichage.
+- Les fichiers passés en ligne de commande au premier lancement s'ouvrent désormais après la
+  saisie de la clé d'activation (ils étaient perdus).
 - L'exe s'appelle désormais `Ocekour.exe` (sans numéro de version).
 
 ## 2.1.0

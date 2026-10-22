@@ -48,10 +48,10 @@ pub fn edge_runtimes(bases: &[PathBuf]) -> Vec<PathBuf> {
     found
 }
 
-pub const MISSING: &str = "Ocekour a besoin du composant Microsoft Edge WebView2, introuvable sur ce poste \
-(ni installé, ni utilisable depuis le navigateur Edge).\n\n\
+pub const MISSING: &str = "Ocekour a besoin, pour s'afficher, du composant Microsoft Edge WebView2 \
+ou du navigateur Microsoft Edge : aucun des deux n'a été trouvé sur ce poste.\n\n\
 Solutions, au choix :\n\
-- faire installer « Microsoft Edge WebView2 Runtime » par le service informatique ;\n\
+- faire installer Microsoft Edge ou « Microsoft Edge WebView2 Runtime » par le service informatique ;\n\
 - sans installation : copier le runtime WebView2 « Fixed Version » (Microsoft) à côté de \
 l'exe d'Ocekour, dans un dossier nommé WebView2 (il doit contenir msedgewebview2.exe).\n\n\
 ocekour-headless.exe (sonde, serveur MCP, notifications) n'en a pas besoin.";

@@ -1,4 +1,6 @@
 import type { FileEncoding, LocalFile } from '../../../shared/api';
+import { untrack } from 'svelte';
+import { licence } from '../core/licence.svelte';
 import { notifications } from '../core/notification.svelte';
 import { LogSession } from '../logs/log-session';
 import { tabsService as tabs } from '../logs/tabs.service';
@@ -36,9 +38,18 @@ class LocalFilesService {
   start() {
     if (this.started) return;
     this.started = true;
-    void this.refresh();
     this.api?.onOpen((paths) => this.openPaths(paths, true));
-    void this.api?.pending().then((paths) => this.openPaths(paths, true)).catch(() => {});
+    // Liste et fichiers de la ligne de commande : le cœur ne répond qu'une fois Ocekour activé
+    // (au premier lancement, après la saisie de la clé).
+    $effect.root(() => {
+      $effect(() => {
+        if (!licence.active) return;
+        untrack(() => {
+          void this.refresh();
+          void this.api?.pending().then((paths) => this.openPaths(paths, true)).catch(() => {});
+        });
+      });
+    });
     // Fichiers déposés sur la fenêtre : ouverts en onglets, sauf sur l'explorateur S3
     // (qui les envoie dans le bucket).
     this.api?.onDropped((paths) => {
