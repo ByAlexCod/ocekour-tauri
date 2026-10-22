@@ -1,6 +1,7 @@
-//! WebView2 (Windows) : runtime installé sur le poste, ou runtime « Fixed Version » posé à côté
-//! de l'exe, pour les postes sans droits d'installation ni accès Internet (Windows 10 n'a pas
-//! toujours WebView2). Vérifié avant d'ouvrir la fenêtre : message clair plutôt qu'un échec brut.
+//! WebView2 (Windows) : runtime installé sur le poste, runtime « Fixed Version » posé à côté de
+//! l'exe, ou à défaut composants du navigateur Edge installé — pour les postes Windows 10 sans
+//! WebView2 ni droits d'installation. Vérifié avant d'ouvrir la fenêtre : message clair plutôt
+//! qu'un échec brut.
 
 use std::path::{Path, PathBuf};
 
@@ -20,19 +21,39 @@ pub fn bundled_runtime(exe_dir: &Path) -> Option<PathBuf> {
         .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("Microsoft.WebView2.FixedVersionRuntime.")))
         .filter(|p| has_browser(p))
         .collect();
-    // Par version (140 > 99), pas par ordre alphabétique.
-    let version = |p: &PathBuf| -> Vec<u64> {
-        p.file_name().and_then(|n| n.to_str()).unwrap_or("").split(['.', '-']).filter_map(|x| x.parse().ok()).collect()
-    };
-    found.sort_by_key(version);
+    found.sort_by_key(version_of);
     found.pop()
 }
 
-pub const MISSING: &str = "Ocekour a besoin du composant Microsoft Edge WebView2, absent de ce poste.\n\n\
-Sans installation ni accès Internet : copiez le runtime WebView2 « Fixed Version » à côté de \
-l'exe d'Ocekour, dans un dossier nommé WebView2 (il doit contenir msedgewebview2.exe). \
-Le zip d'Ocekour le contient déjà.\n\n\
-Autre solution : faire installer « Microsoft Edge WebView2 Runtime » par le service informatique.\n\n\
+/// Numéros de version d'un nom de dossier, pour trier par version (140 > 99), pas par ordre
+/// alphabétique.
+fn version_of(p: &PathBuf) -> Vec<u64> {
+    p.file_name().and_then(|n| n.to_str()).unwrap_or("").split(['.', '-']).filter_map(|x| x.parse().ok()).collect()
+}
+
+/// Dossiers de version du navigateur Edge installé (`<base>\Microsoft\Edge\Application\<version>\`
+/// avec `msedgewebview2.exe`), du plus récent au plus ancien : `bases` = Program Files (x86),
+/// Program Files, puis le dossier local de l'utilisateur (installation par utilisateur).
+pub fn edge_runtimes(bases: &[PathBuf]) -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = bases
+        .iter()
+        .map(|b| b.join("Microsoft").join("Edge").join("Application"))
+        .filter_map(|app| std::fs::read_dir(app).ok())
+        .flat_map(|entries| entries.flatten().map(|e| e.path()))
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.split('.').all(|x| x.parse::<u64>().is_ok()) && n.contains('.')))
+        .filter(|p| p.join("msedgewebview2.exe").is_file())
+        .collect();
+    found.sort_by_key(version_of);
+    found.reverse();
+    found
+}
+
+pub const MISSING: &str = "Ocekour a besoin du composant Microsoft Edge WebView2, introuvable sur ce poste \
+(ni installé, ni utilisable depuis le navigateur Edge).\n\n\
+Solutions, au choix :\n\
+- faire installer « Microsoft Edge WebView2 Runtime » par le service informatique ;\n\
+- sans installation : copier le runtime WebView2 « Fixed Version » (Microsoft) à côté de \
+l'exe d'Ocekour, dans un dossier nommé WebView2 (il doit contenir msedgewebview2.exe).\n\n\
 ocekour-headless.exe (sonde, serveur MCP, notifications) n'en a pas besoin.";
 
 /// Prépare WebView2 : runtime livré avec l'exe s'il y en a un, puis vérifie qu'un runtime est
@@ -47,7 +68,19 @@ pub fn prepare() -> Result<String, &'static str> {
             unsafe { std::env::set_var(BROWSER_FOLDER_VAR, &dir) };
         }
     }
-    installed_version().ok_or(MISSING)
+    if let Some(version) = installed_version() { return Ok(version); }
+    // Pas de runtime WebView2 : essai avec le navigateur Edge installé (mêmes composants ;
+    // Microsoft ne le garantit que pour Edge Beta/Dev/Canary, d'où la vérification).
+    if std::env::var_os(BROWSER_FOLDER_VAR).is_none() {
+        let bases: Vec<PathBuf> = ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"].iter().filter_map(std::env::var_os).map(PathBuf::from).collect();
+        for dir in edge_runtimes(&bases) {
+            // SAFETY : appelé au démarrage, avant la création de tout autre fil.
+            unsafe { std::env::set_var(BROWSER_FOLDER_VAR, &dir) };
+            if let Some(version) = installed_version() { return Ok(format!("{version} (Edge : {})", dir.display())); }
+        }
+        unsafe { std::env::remove_var(BROWSER_FOLDER_VAR) };
+    }
+    Err(MISSING)
 }
 
 /// Version du runtime que WebView2 utilisera (celui de la variable, sinon celui installé).
@@ -114,5 +147,20 @@ mod tests {
         // `WebView2\` est prioritaire.
         runtime(&exe.path().join("WebView2"));
         assert_eq!(bundled_runtime(exe.path()), Some(exe.path().join("WebView2")));
+    }
+
+    #[test]
+    fn navigateur_edge_installe() {
+        let (x86, local) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let app = |b: &Path| b.join("Microsoft").join("Edge").join("Application");
+        assert!(edge_runtimes(&[x86.path().into(), local.path().into()]).is_empty());
+        runtime(&app(x86.path()).join("99.0.1150.30"));
+        runtime(&app(x86.path()).join("155.0.4283.62"));
+        runtime(&app(local.path()).join("154.0.4258.62"));
+        // Dossiers sans msedgewebview2.exe ou qui ne sont pas des versions : ignorés.
+        std::fs::create_dir_all(app(x86.path()).join("156.0.1.1")).unwrap();
+        runtime(&app(x86.path()).join("SetupMetrics"));
+        let found = edge_runtimes(&[x86.path().into(), local.path().into()]);
+        assert_eq!(found, vec![app(x86.path()).join("155.0.4283.62"), app(local.path()).join("154.0.4258.62"), app(x86.path()).join("99.0.1150.30")]);
     }
 }
