@@ -61,6 +61,8 @@
   const mode = $derived(s.searchMode());
   const options = $derived(s.options());
   const frame = $derived(s.version());
+  /** Lit `frame` (dépendance de rafraîchissement) puis renvoie la valeur. */
+  const at = <T,>(_frame: number, value: T): T => value;
   const members = $derived(asm?.members() ?? []);
   const hidden = $derived(asm?.hiddenSources() ?? new Set<string>());
   const reorderMs = $derived(asm?.reorderMs() ?? 0);
@@ -75,7 +77,7 @@
   const tailChoices = $derived([...new Set([...TAIL_CHOICES, configService.config?.defaultTailLines ?? 1_000])].sort((a, b) => a - b));
   const path = targetPath(s.target);
 
-  const rowCount = $derived((frame, rows.length));
+  const rowCount = $derived(at(frame, rows.length));
   const compiled = $derived.by((): { matcher?: Matcher; error?: string } => {
     try {
       return { matcher: buildMatcher(s.search()) };
@@ -86,7 +88,7 @@
   const matcher = $derived(compiled.matcher);
   const searchError = $derived(compiled.error);
   /** Lignes par niveau : tenues à jour par le tampon, lues une fois par image. */
-  const levelCounts = $derived((frame, { ...s.buffer.levelCounts } as Record<Level, number>));
+  const levelCounts = $derived(at(frame, { ...s.buffer.levelCounts } as Record<Level, number>));
 
   // --- Colonnes JSON indentées (profil : `wrap`) ---------------------------------------------
   const wrapColumns = $derived.by(() => {
@@ -130,8 +132,8 @@
     return lines > 1 ? lines * LINE_HEIGHT + WRAP_PADDING : ROW_HEIGHT;
   };
 
-  const matchCount = $derived((frame, rows.matchCount));
-  const newLines = $derived((frame, s.stickToBottom() ? 0 : s.buffer.total - s.seqWhenUnstuck()));
+  const matchCount = $derived(at(frame, rows.matchCount));
+  const newLines = $derived(at(frame, s.stickToBottom() ? 0 : s.buffer.total - s.seqWhenUnstuck()));
 
   // --- Effets ---------------------------------------------------------------------------------
   let filterTimer: ReturnType<typeof setTimeout> | undefined;
@@ -212,8 +214,8 @@
   let searchInput = $state<HTMLInputElement>();
   let scrollTop = $state(0);
   let viewportHeight = $state(600);
-  const total = $derived((frame, rows.total));
-  const range = $derived((frame, total, visibleRange(rows, scrollTop, viewportHeight)));
+  const total = $derived(at(frame, rows.total));
+  const range = $derived(at(frame + total, visibleRange(rows, scrollTop, viewportHeight)));
   const visible = $derived.by(() => {
     void frame;
     const out: { entry: LogEntry; index: number; height: number }[] = [];
@@ -223,7 +225,7 @@
     }
     return out;
   });
-  const offset = $derived((frame, rows.offsetOf(range.start)));
+  const offset = $derived(at(frame, rows.offsetOf(range.start)));
 
   onMount(() => {
     const el = viewport!;
@@ -686,7 +688,7 @@
       <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium {statusClass(status.state)}">{statusLabel(status.state)}</span>
       <span>{rowCount.toLocaleString('fr-FR')} lignes</span>
       {#if options.follow && status.state === 'live'}<span title="Lignes reçues par seconde">· {s.rate()}/s</span>{/if}
-      {#if (frame, s.buffer.dropped)}<span title="Retirées de la mémoire (taille du tampon)">· {s.buffer.dropped.toLocaleString('fr-FR')} retirées</span>{/if}
+      {#if at(frame, s.buffer.dropped)}<span title="Retirées de la mémoire (taille du tampon)">· {s.buffer.dropped.toLocaleString('fr-FR')} retirées</span>{/if}
       {#if s.paused()}<span class="font-medium text-amber-600">· en pause</span>{/if}
     </div>
   </div>

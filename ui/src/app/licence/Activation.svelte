@@ -16,8 +16,8 @@
   let busy = $state(false);
   let error = $state<string | undefined>(undefined);
   let key = $state('');
-  const state = $derived(licence.state);
-  const view = $derived(licence.changing ? 'form' : state.status === 'missing' ? 'form' : state.status);
+  const current = $derived(licence.state);
+  const view = $derived(licence.changing ? 'form' : current.status === 'missing' ? 'form' : current.status);
   const title = $derived(
     view === 'checking'
       ? 'Vérification de la clé…'
@@ -27,7 +27,7 @@
           ? 'Changer de clé d’activation'
           : 'Activer Ocekour',
   );
-  const modeLabel = $derived(state.info?.mode ? MODE_LABELS[state.info.mode] : '');
+  const modeLabel = $derived(current.info?.mode ? MODE_LABELS[current.info.mode] : '');
 
   async function activate() {
     if (!key.trim()) return;
@@ -53,8 +53,8 @@
     {#if view === 'checking'}
       <p class="text-sm text-slate-600 dark:text-slate-300">Connexion au serveur de statistiques de l'équipe…</p>
     {:else if view === 'blocked'}
-      <p class="text-sm text-slate-700 dark:text-slate-200">{state.message}</p>
-      <p class="mt-2 text-xs text-slate-500">Clé « {state.info?.label} » · {modeLabel} · {state.info?.id}</p>
+      <p class="text-sm text-slate-700 dark:text-slate-200">{current.message}</p>
+      <p class="mt-2 text-xs text-slate-500">Clé « {current.info?.label} » · {modeLabel} · {current.info?.id}</p>
       <div class="mt-5 flex gap-2">
         <button type="button" class="btn-primary" disabled={busy} onclick={retry}>{busy ? 'Vérification…' : 'Réessayer'}</button>
         <button type="button" class="btn" onclick={() => (licence.changing = true)}>Changer de clé</button>
@@ -63,8 +63,8 @@
       <p class="text-sm text-slate-600 dark:text-slate-300">
         Collez la clé d'activation qui vous a été remise (elle commence par <code>OCEKOUR1-</code>).
       </p>
-      {#if state.message && !licence.changing}
-        <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">{state.message}</p>
+      {#if current.message && !licence.changing}
+        <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">{current.message}</p>
       {/if}
       <textarea
         class="input mt-3 h-28 w-full resize-none font-mono text-xs break-all"
@@ -84,7 +84,7 @@
           <button type="button" class="btn" onclick={() => (licence.changing = false)}>Annuler</button>
         {/if}
         <span class="flex-1"></span>
-        {#if state.development}
+        {#if current.development}
           <span class="text-xs text-amber-600" title="Accepte aussi les clés de développement">Build de développement</span>
         {/if}
       </div>

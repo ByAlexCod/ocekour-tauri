@@ -28,7 +28,7 @@ export type Tab = LogSession | ExplorerSession | AssemblySession;
 
 export type { TabState } from './tab-state';
 
-class TabsService {
+export class TabsService {
   readonly tabs = signal<Tab[]>([]);
   readonly active = signal<Tab | undefined>(undefined);
   readonly activeTarget = computed(() => this.active()?.target);
