@@ -82,7 +82,7 @@ Côté cœur, `StreamManager::open` reçoit une **source locale** : connexion r�
 | Suivi               | Après l'historique, on garde la position et on lit ce qui est ajouté : notification système (`notify`) + vérification toutes les 500 ms (partages réseau, SMB).       |
 | Rotation            | Fichier remplacé (identité changée : inode / id de fichier Windows) ou tronqué (taille < position) : notice « Fichier renouvelé » puis lecture depuis le début.       |
 | Fichier supprimé    | Statut `reconnecting` (« fichier absent, en attente »), reprise s'il réapparaît ; `ended` en mode historique.                                                         |
-| Encodage            | UTF-8 (remplacement des octets invalides), **UTF-16 LE/BE détecté par BOM** (logs Windows, PowerShell), Latin-1 au choix dans le menu de l'onglet. _(reco)_          |
+| Encodage            | UTF-8 (remplacement des octets invalides) par défaut, **UTF-16 LE/BE détecté par BOM** (logs Windows, PowerShell) ; **Latin-1** et **Windows-1252** au choix dans le menu de l'onglet (mémorisé par fichier / motif). |
 | Fins de ligne       | `\n` et `\r\n` ; dernière ligne sans fin gardée en attente en suivi (`LineSplitter` existant).                                                                       |
 | Lignes très longues | Coupées à 1 Mo avec la mention « … (tronqué) » (protection mémoire).                                                                                                 |
 | Compressé           | `.gz` lu en historique seulement (décompression en flux) ; suivi désactivé. `.zip` hors périmètre. _(reco)_                                                          |
@@ -147,7 +147,7 @@ n'ont accès **qu'aux fichiers que l'utilisateur a déclarés** pour eux.
 
 - **Cœur** (`streams/file.rs`) : N dernières lignes sur un fichier > 10 Mo (lecture depuis la
   fin), « Tout », suivi (ajouts en direct), rotation par renommage, troncature, suppression puis
-  recréation, CRLF, UTF-16 avec BOM, octets invalides, ligne de 5 Mo, `.gz`, « Depuis ».
+  recréation, CRLF, UTF-16 avec BOM, octets invalides, Latin-1 et Windows-1252 (`€`, `œ`, guillemets), ligne de 5 Mo, `.gz`, « Depuis ».
 - **Motifs** : tri par date, limite de 30, bascule sur un nouveau fichier en suivi, « N lignes »
   à cheval sur deux fichiers, caractères spéciaux refusés (`**`, séparateurs dans le motif).
 - **MCP** : fichier autorisé lu, fichier hors liste refusé, contournement par `..` et par lien
@@ -160,7 +160,4 @@ n'ont accès **qu'aux fichiers que l'utilisateur a déclarés** pour eux.
 
 - Motifs en local **dès la 2.1** (§4 bis).
 - Agents : accès limité à la **liste blanche** de l'utilisateur (§8).
-
-## 11. Question ouverte
-
-- Encodages à prendre en charge en plus d'UTF-8 / UTF-16 / Latin-1 (Windows-1252 ?).
+- Encodages : UTF-8, UTF-16, Latin-1 et **Windows-1252** (§4).

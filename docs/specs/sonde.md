@@ -22,6 +22,11 @@ Principes :
   2.2**, sans WebView2, quelques Mo de mémoire.
 - **Indépendante de la clé d'activation** (§9).
 - **Un jeton par sonde**, défini sur la sonde (§6).
+- **C'est le poste qui initie** : le poste du développeur (l'interface) ouvre la connexion vers
+  la sonde ; la sonde **écoute et répond, elle n'appelle jamais personne** (ni le poste, ni
+  Internet). Seul son port est à ouvrir, en entrée, sur la machine distante.
+- **Plusieurs personnes à la fois** : une sonde sert **plusieurs postes abonnés** aux mêmes
+  sources ou à des sources différentes, chacun avec ses propres options, sans se gêner (§5).
 - **Lecture seule, liste blanche** : seul ce qui est déclaré dans la configuration de la sonde
   est lisible ; aucun chemin arbitraire ne peut être demandé.
 - **Sécurisé par défaut** : TLS obligatoire hors `127.0.0.1`, jeton d'accès, certificat épinglé
@@ -83,12 +88,13 @@ sources:
   - id: api-commandes          # [a-z0-9-], stable : clé des liens, profils, favoris
     nom: API commandes
     fichier: /var/log/commandes/api.log
-    encodage: utf-8            # utf-8 (défaut) | utf-16 | latin-1
+    encodage: utf-8            # utf-8 (défaut) | utf-16 | latin-1 | windows-1252
   - id: batch-nuit
     motif: /var/log/batch/batch-*.log   # liste les fichiers ; « dernier » = le plus récent
     garder: 30                 # au plus N fichiers listés (les plus récents)
 limites:
-  flux_simultanes: 20          # au total
+  flux_simultanes: 50          # au total, tous postes confondus
+  flux_par_poste: 10           # par poste abonné (adresse IP + identifiant de poste, §5)
   debit_max: 5 Mo/s            # par flux, au-delà : lignes sautées signalées (§5)
 journal: sonde.log             # accès (qui, quelle source, quand) — jamais le contenu
 ```
@@ -132,13 +138,33 @@ automatique** sur le nouveau fichier quand il apparaît), `lignes=N`, `depuis=<s
 - Erreurs : `401` jeton absent/invalide, `404` source ou fichier inconnu, `429` limite de flux
   atteinte, `503` source illisible (droits).
 
-## 5. Charge et débit
+## 5. Plusieurs abonnés, charge et débit
 
-- La sonde lit **au rythme du client** (contre-pression TCP) ; si le client est lent et que le
-  fichier tourne entre temps, notice « N lignes sautées » plutôt qu'une mémoire qui grossit.
-- Mémoire de la sonde bornée : < 30 Mo au repos, < 2 Mo par flux.
+Une sonde est partagée : plusieurs développeurs, chacun depuis son poste, s'**abonnent** à ses
+sources (un abonnement = un flux ouvert par un onglet, un assemblage ou un outil MCP).
+
+- **Indépendance** : chaque abonnement a ses options (`lignes`, `depuis`, `suivi`, fichier
+  choisi dans un motif) et **sa propre position** ; l'un peut lire l'historique pendant qu'un
+  autre suit en direct le même fichier.
+- **Lecture partagée** : un fichier suivi par plusieurs abonnés n'est lu **qu'une fois** ;
+  les nouvelles lignes sont diffusées à chacun (`broadcast.rs`). L'historique (N dernières
+  lignes) est lu séparément pour chaque abonnement.
+- **Pas de blocage mutuel** : chaque abonné a sa file bornée ; un poste lent (réseau, machine
+  chargée) **ne ralentit pas les autres**. Si sa file déborde, il reçoit la notice
+  « N lignes sautées (connexion trop lente) » et reprend au fil du direct.
+- **Arrivées et départs** : un poste qui se connecte, se déconnecte ou perd le réseau n'a
+  aucun effet sur les autres ; la reprise par curseur (§4) est propre à chaque abonnement.
+- **Identification du poste** : le jeton étant commun, chaque requête porte l'en-tête
+  informatif `X-Ocekour-Poste: <machine>/<utilisateur Windows>` (envoyé par l'interface). Il
+  sert au journal, aux limites par poste et à `sonde statut` ; ce **n'est pas** une
+  authentification.
+- **`ocekour-headless sonde statut`** (sur la machine de la sonde) : abonnés en cours (poste,
+  IP, source, depuis quand, débit, lignes sautées). Pas d'équivalent côté poste : un
+  développeur ne voit pas qui d'autre lit la sonde.
+- **Limites** : `flux_simultanes` (total) et `flux_par_poste` ; au-delà, `429` avec un message
+  clair côté interface (« sonde saturée » / « trop d'onglets ouverts sur cette sonde »).
+- Mémoire de la sonde bornée : < 30 Mo au repos, < 2 Mo par abonnement.
 - Compression `Content-Encoding: gzip` négociée (logs texte : ÷5 à ÷10 sur le réseau).
-- Un même fichier suivi par plusieurs clients n'est lu qu'**une fois** (diffusion interne).
 
 ## 6. Sécurité
 
@@ -220,8 +246,12 @@ est comptée comme les autres flux (`Flux / Ouvert / sonde`), sans nom de machin
   refusée, limites (429), blocage après échecs, démarrage sans aucune clé d'activation.
 - **Flux de bout en bout** (vraie sonde sur un port libre + client du cœur) : N dernières
   lignes, suivi, rotation, bascule de motif, coupure réseau simulée puis **reprise sans perte
-  ni doublon** par curseur, `ping` et détection de connexion morte, deux clients sur un même
-  fichier, client lent.
+  ni doublon** par curseur, `ping` et détection de connexion morte.
+- **Plusieurs abonnés** : 5 postes simulés sur une même source avec des options différentes
+  (historique / suivi / autre fichier du motif), lecture unique du fichier, un abonné lent
+  n'en retarde aucun autre (lignes sautées pour lui seul), départ d'un abonné sans effet sur
+  les autres, limites par poste et totale (429), `sonde statut` exact, renouvellement du jeton
+  qui ferme tous les abonnements.
 - **Poste** : épinglage (empreinte changée → refus avec message clair), arbre, onglet,
   assemblage, lien de partage, outils MCP sur une source de sonde.
 - **Binaire** : `ocekour-headless sonde` démarré par les tests (comme `--mcp-http`), sous
@@ -231,7 +261,9 @@ est comptée comme les autres flux (`Flux / Ouvert / sonde`), sans nom de machin
 
 Décisions :
 
-- **Réseau** : connexion directe du poste vers la sonde (pas de relais ni d'inversion).
+- **Réseau** : c'est **le poste qui initie** la connexion vers la sonde ; la sonde n'appelle
+  jamais (pas de relais ni d'inversion).
+- **Abonnés** : plusieurs postes abonnés en même temps, indépendants (§5).
 - **Systèmes** : Windows **et** Linux dès la 2.2.
 - **Jeton** : un seul par sonde, défini sur la sonde (§6).
 - **Licence** : aucun lien avec la clé d'activation (§9).
