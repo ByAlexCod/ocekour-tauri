@@ -73,9 +73,7 @@ pub fn main() -> i32 {
             match browser::find_browser() {
                 Some(path) => edge = Some(path),
                 None => {
-                    #[cfg(windows)]
-                    webview2::alert(webview2::MISSING);
-                    eprintln!("{}", webview2::MISSING);
+                    fatal(webview2::MISSING);
                     return 1;
                 }
             }
@@ -99,6 +97,7 @@ pub fn main() -> i32 {
     }
 
     ocekour_core::logging::init(&dir, cfg!(debug_assertions));
+    install_panic_hook(&args, edge.is_none());
     // Le fil principal (boucle de la fenêtre) reste dans le contexte tokio : le cœur y lance
     // ses tâches (serveur MCP, notifications) depuis les rappels de Tauri.
     let _guard = runtime.enter();
@@ -111,7 +110,7 @@ pub fn main() -> i32 {
         let app = match App::new(AppOptions::new(&dir, VERSION, ui.clone())) {
             Ok(app) => app,
             Err(e) => {
-                log::error!("Démarrage impossible : {e}");
+                fatal(&format!("Démarrage impossible : {e}"));
                 return 1;
             }
         };
@@ -125,16 +124,70 @@ pub fn main() -> i32 {
     let app = match App::new(AppOptions::new(&dir, VERSION, ui.clone())) {
         Ok(app) => app,
         Err(e) => {
-            log::error!("Démarrage impossible : {e}");
+            fatal(&format!("Démarrage impossible : {e}"));
             return 1;
         }
     };
     app.files.queue(files);
-    run_window(app, ui, context);
+    if let Err(e) = run_window(app.clone(), ui, context) {
+        // Fenêtre WebView2 impossible : l'interface s'ouvre dans Edge en mode application.
+        log::error!("Fenêtre impossible : {e}");
+        runtime.block_on(app.shutdown());
+        drop(app);
+        return fall_back_to_browser(&args, &e.to_string());
+    }
     0
 }
 
-fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>, context: tauri::Context<tauri::Wry>) {
+/// Fenêtre ouverte et page chargée : plus de repli vers le navigateur en cas d'incident.
+static WINDOW_LOADED: AtomicBool = AtomicBool::new(false);
+
+/// Relance l'exe en mode navigateur (`--navigateur`) ; message si c'est impossible.
+fn fall_back_to_browser(args: &[String], cause: &str) -> i32 {
+    let relaunched = browser::find_browser().is_some()
+        && std::env::current_exe()
+            .and_then(|exe| std::process::Command::new(exe).args(args).arg("--navigateur").spawn())
+            .inspect_err(|e| log::error!("Relance en mode navigateur impossible : {e}"))
+            .is_ok();
+    if relaunched {
+        log::info!("Interface relancée dans le navigateur (mode application).");
+        return 0;
+    }
+    fatal(&format!("La fenêtre d'Ocekour n'a pas pu s'ouvrir : {cause}\n\n{}", webview2::MISSING));
+    1
+}
+
+/// Erreur fatale au démarrage : journal, sortie d'erreur et boîte de message (l'exe Windows n'a
+/// pas de console : sans elle, il se fermerait sans rien dire).
+pub(crate) fn fatal(text: &str) {
+    log::error!("{text}");
+    eprintln!("{text}");
+    #[cfg(windows)]
+    webview2::alert(&format!("{text}\n\nJournal : {}", ocekour_core::logging::log_file().display()));
+}
+
+/// Panique du fil principal (boucle de la fenêtre) : consignée et signalée ; avant que la page
+/// soit chargée, l'interface est relancée dans le navigateur. Les paniques des tâches de fond
+/// sont seulement consignées (tokio les isole).
+fn install_panic_hook(args: &[String], can_fall_back: bool) {
+    let args = args.to_vec();
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("Panique : {info}");
+        if std::thread::current().name() != Some("main") {
+            default(info);
+            return;
+        }
+        if can_fall_back && !WINDOW_LOADED.load(Ordering::SeqCst) {
+            log::error!("Fenêtre impossible (panique) : {info}");
+            std::process::exit(fall_back_to_browser(&args, &info.to_string()));
+        }
+        fatal(&format!("Erreur inattendue : {info}"));
+        default(info);
+    }));
+}
+
+fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>, context: tauri::Context<tauri::Wry>) -> tauri::Result<()> {
     let core = app.clone();
     let built = tauri::Builder::default()
         // Un seul Ocekour à la fois : un second lancement remet la fenêtre au premier plan.
@@ -164,13 +217,7 @@ fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>, context: tauri::Context<tauri
             Ok(())
         })
         .build(context);
-    let tauri_app = match built {
-        Ok(a) => a,
-        Err(e) => {
-            log::error!("Fenêtre impossible : {e}");
-            return;
-        }
-    };
+    let tauri_app = built?;
     // Avant de quitter : dernier envoi des statistiques (2 s au plus), serveurs arrêtés.
     let stopping = Arc::new(AtomicBool::new(false));
     tauri_app.run(move |handle, event| {
@@ -184,6 +231,7 @@ fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>, context: tauri::Context<tauri
             });
         }
     });
+    Ok(())
 }
 
 /// Garde vivant l'observateur de config.yaml (modifications faites hors de l'application).
@@ -201,7 +249,10 @@ fn create_window(handle: &tauri::AppHandle, app: &Arc<App>) -> tauri::Result<tau
         .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
         // Rechargement de la page : ses flux de logs sont arrêtés.
         .on_page_load(move |window, payload| {
-            if payload.event() == PageLoadEvent::Started { streams.streams.close_all_of(window.label()); }
+            match payload.event() {
+                PageLoadEvent::Started => streams.streams.close_all_of(window.label()),
+                PageLoadEvent::Finished => WINDOW_LOADED.store(true, Ordering::SeqCst),
+            }
         })
         .build()?;
     let streams = app.clone();

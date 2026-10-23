@@ -42,6 +42,12 @@ Ils sont tout en haut de la barre latérale, dans la section **★ Favoris**.
 Il doit copier le lien **en entier**, puis le coller dans Ocekour (Ctrl+V hors d'un champ)
 ou cliquer sur **🔗**. Si la connexion lui manque, Ocekour lui propose de la créer.
 
+**Ocekour s'ouvre puis se ferme aussitôt.**
+Depuis la 2.2, une erreur de démarrage s'affiche dans une boîte de message et, si c'est la
+fenêtre WebView2 qui échoue, Ocekour se rouvre de lui-même dans le navigateur Edge (mode
+application). Le détail est dans `%APPDATA%\Ocekour\logs\main.log`. Pour forcer l'affichage
+dans Edge : `Ocekour.exe --navigateur`.
+
 **Ocekour démarre lentement à chaque fois.**
 Depuis la 2.0, l'exe ne décompresse plus rien et démarre en moins d'une seconde. Si la
 fenêtre reste blanche, vérifiez que **Microsoft Edge WebView2** est installé (Paramètres

@@ -149,7 +149,7 @@ pub async fn run(app: Arc<App>, ui: Arc<BrowserUi>, assets: Assets, browser: Pat
     let listener = match TcpListener::bind(("127.0.0.1", 0)).await {
         Ok(l) => l,
         Err(e) => {
-            log::error!("Mode Edge : écoute impossible : {e}");
+            crate::fatal(&format!("Mode Edge : écoute impossible : {e}"));
             return 1;
         }
     };
@@ -172,9 +172,7 @@ pub async fn run(app: Arc<App>, ui: Arc<BrowserUi>, assets: Assets, browser: Pat
     let url = format!("http://127.0.0.1:{port}/?t={}", server.token);
     log::info!("Mode Edge (WebView2 indisponible) : interface sur http://127.0.0.1:{port}/ avec {}", browser.display());
     if let Err(e) = launch(&browser, &url, &profile) {
-        log::error!("Mode Edge : lancement de {} impossible : {e}", browser.display());
-        #[cfg(windows)]
-        crate::webview2::alert(&format!("Ocekour n'a pas pu ouvrir sa fenêtre avec Edge ({}) : {e}", browser.display()));
+        crate::fatal(&format!("Ocekour n'a pas pu ouvrir sa fenêtre avec Edge ({}) : {e}", browser.display()));
         app.shutdown().await;
         return 1;
     }
@@ -200,9 +198,14 @@ pub async fn run(app: Arc<App>, ui: Arc<BrowserUi>, assets: Assets, browser: Pat
                 if server.clients.load(Ordering::SeqCst) > 0 { continue; }
                 let closed = server.connected_once.load(Ordering::SeqCst) && server.idle_since.lock().elapsed() >= IDLE_EXIT;
                 let never = !server.connected_once.load(Ordering::SeqCst) && started.elapsed() >= FIRST_CONNECT;
-                if closed || never {
+                if closed {
                     log::info!("Mode Edge : fenêtre fermée, arrêt.");
                     break;
+                }
+                if never {
+                    crate::fatal(&format!("La fenêtre Edge ({}) ne s'est pas connectée à Ocekour en {} s : arrêt.", browser.display(), FIRST_CONNECT.as_secs()));
+                    app.shutdown().await;
+                    return 1;
                 }
             }
         }

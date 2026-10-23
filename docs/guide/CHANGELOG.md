@@ -18,6 +18,9 @@
 - Si WebView2 n'est pas utilisable, Ocekour s'affiche avec le navigateur Edge du poste, en
   fenêtre dédiée (mode application) : rien à installer, aucun accès Internet nécessaire.
   `--navigateur` force cet affichage.
+- Si la fenêtre WebView2 échoue malgré tout à s'ouvrir, Ocekour bascule de lui-même sur cet
+  affichage au lieu de se fermer sans rien dire ; toute erreur de démarrage est désormais
+  affichée dans une boîte de message (avec le chemin du journal).
 - Les fichiers passés en ligne de commande au premier lancement s'ouvrent désormais après la
   saisie de la clé d'activation (ils étaient perdus).
 - L'exe s'appelle désormais `Ocekour.exe` (sans numéro de version).

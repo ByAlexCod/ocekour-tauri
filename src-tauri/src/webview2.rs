@@ -1,7 +1,6 @@
-//! WebView2 (Windows) : runtime installé sur le poste, runtime « Fixed Version » posé à côté de
-//! l'exe, ou à défaut composants du navigateur Edge installé — pour les postes Windows 10 sans
-//! WebView2 ni droits d'installation. Vérifié avant d'ouvrir la fenêtre : message clair plutôt
-//! qu'un échec brut.
+//! WebView2 (Windows) : runtime installé sur le poste ou runtime « Fixed Version » posé à côté de
+//! l'exe. Vérifié avant d'ouvrir la fenêtre ; sans lui (Windows 10 hors ligne), l'interface
+//! s'ouvre dans Edge en mode application (voir `browser`).
 
 use std::path::{Path, PathBuf};
 
@@ -31,23 +30,6 @@ fn version_of(p: &PathBuf) -> Vec<u64> {
     p.file_name().and_then(|n| n.to_str()).unwrap_or("").split(['.', '-']).filter_map(|x| x.parse().ok()).collect()
 }
 
-/// Dossiers de version du navigateur Edge installé (`<base>\Microsoft\Edge\Application\<version>\`
-/// avec `msedgewebview2.exe`), du plus récent au plus ancien : `bases` = Program Files (x86),
-/// Program Files, puis le dossier local de l'utilisateur (installation par utilisateur).
-pub fn edge_runtimes(bases: &[PathBuf]) -> Vec<PathBuf> {
-    let mut found: Vec<PathBuf> = bases
-        .iter()
-        .map(|b| b.join("Microsoft").join("Edge").join("Application"))
-        .filter_map(|app| std::fs::read_dir(app).ok())
-        .flat_map(|entries| entries.flatten().map(|e| e.path()))
-        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.split('.').all(|x| x.parse::<u64>().is_ok()) && n.contains('.')))
-        .filter(|p| p.join("msedgewebview2.exe").is_file())
-        .collect();
-    found.sort_by_key(version_of);
-    found.reverse();
-    found
-}
-
 pub const MISSING: &str = "Ocekour a besoin, pour s'afficher, du composant Microsoft Edge WebView2 \
 ou du navigateur Microsoft Edge : aucun des deux n'a été trouvé sur ce poste.\n\n\
 Solutions, au choix :\n\
@@ -68,19 +50,9 @@ pub fn prepare() -> Result<String, &'static str> {
             unsafe { std::env::set_var(BROWSER_FOLDER_VAR, &dir) };
         }
     }
-    if let Some(version) = installed_version() { return Ok(version); }
-    // Pas de runtime WebView2 : essai avec le navigateur Edge installé (mêmes composants ;
-    // Microsoft ne le garantit que pour Edge Beta/Dev/Canary, d'où la vérification).
-    if std::env::var_os(BROWSER_FOLDER_VAR).is_none() {
-        let bases: Vec<PathBuf> = ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"].iter().filter_map(std::env::var_os).map(PathBuf::from).collect();
-        for dir in edge_runtimes(&bases) {
-            // SAFETY : appelé au démarrage, avant la création de tout autre fil.
-            unsafe { std::env::set_var(BROWSER_FOLDER_VAR, &dir) };
-            if let Some(version) = installed_version() { return Ok(format!("{version} (Edge : {})", dir.display())); }
-        }
-        unsafe { std::env::remove_var(BROWSER_FOLDER_VAR) };
-    }
-    Err(MISSING)
+    // Pas de runtime WebView2 : pas d'essai avec les composants du navigateur Edge stable (la
+    // version se lit, mais la création de la vue échoue) ; Edge en mode application prend le relais.
+    installed_version().ok_or(MISSING)
 }
 
 /// Version du runtime que WebView2 utilisera (celui de la variable, sinon celui installé).
@@ -147,20 +119,5 @@ mod tests {
         // `WebView2\` est prioritaire.
         runtime(&exe.path().join("WebView2"));
         assert_eq!(bundled_runtime(exe.path()), Some(exe.path().join("WebView2")));
-    }
-
-    #[test]
-    fn navigateur_edge_installe() {
-        let (x86, local) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let app = |b: &Path| b.join("Microsoft").join("Edge").join("Application");
-        assert!(edge_runtimes(&[x86.path().into(), local.path().into()]).is_empty());
-        runtime(&app(x86.path()).join("99.0.1150.30"));
-        runtime(&app(x86.path()).join("155.0.4283.62"));
-        runtime(&app(local.path()).join("154.0.4258.62"));
-        // Dossiers sans msedgewebview2.exe ou qui ne sont pas des versions : ignorés.
-        std::fs::create_dir_all(app(x86.path()).join("156.0.1.1")).unwrap();
-        runtime(&app(x86.path()).join("SetupMetrics"));
-        let found = edge_runtimes(&[x86.path().into(), local.path().into()]);
-        assert_eq!(found, vec![app(x86.path()).join("155.0.4283.62"), app(local.path()).join("154.0.4258.62"), app(x86.path()).join("99.0.1150.30")]);
     }
 }
