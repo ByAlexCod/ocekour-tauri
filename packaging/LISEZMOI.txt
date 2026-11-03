@@ -1,0 +1,18 @@
+Ocekour @VERSION@ — build de diffusion (clés d'activation de production)
+
+Dézippez le dossier où vous voulez et lancez Ocekour.exe. Rien à installer, aucun accès
+Internet ni droit administrateur nécessaires. Gardez ensemble les fichiers du dossier.
+
+Windows (poste)
+  Ocekour.exe            Application.
+                         S'affiche avec WebView2 ; à défaut (Windows 10 sans WebView2),
+                         avec le navigateur Edge du poste, dans une fenêtre dédiée.
+                         En cas de problème : Ocekour.exe --navigateur, et le journal
+                         %APPDATA%\Ocekour\logs\main.log.
+  ocekour-headless.exe   Sans interface : sonde, serveur MCP (--mcp, --mcp-http),
+                         notifications, outils de clés (cle). N'utilise pas WebView2.
+
+Linux (serveur)
+  linux/ocekour-headless Binaire statique, sans dépendance : sonde (voir linux/sonde.md).
+
+docs/                    Guide utilisateur (commencer par README.md).

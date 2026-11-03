@@ -88,4 +88,11 @@ sudo apt-get install -y build-essential pkg-config file curl \
   python3-venv postgresql-client musl-tools nsis clang lld llvm
 ```
 
+**Release** (`.github/workflows/release.yml`) : pousser le tag `v<version>` (celle de
+`Cargo.toml`), ou la lancer à la main depuis l'onglet Actions. Sur une machine hébergée par
+GitHub (indépendante du runner), elle compile Windows et Linux avec les clés de production et
+publie `Ocekour-<version>.zip` en asset d'une Release GitHub (hors quota d'artefacts), avec
+la section de la version du CHANGELOG en notes. Le même paquet en local, une fois les binaires
+compilés : `scripts/paquet.sh <dossier>`.
+
 En développement, une clé : `cargo run -p ocekour-headless -- cle generer --kid dev --label Dev --mode none`.

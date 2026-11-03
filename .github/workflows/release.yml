@@ -1,0 +1,85 @@
+name: release
+
+# Release GitHub : Ocekour-<version>.zip (Ocekour.exe, ocekour-headless.exe, sonde Linux statique,
+# guide) en asset de release, indépendant du quota d'artefacts Actions. Déclenchée par un tag
+# v<version> (celle de Cargo.toml) ou à la main ; une release existante est mise à jour.
+# Machines hébergées par GitHub (gratuites pour un dépôt public) : la release ne dépend pas de la
+# disponibilité du runner auto-hébergé. Les tests tournent dans build.yml.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      XWIN_CACHE_DIR: ${{ github.workspace }}/../xwin
+    steps:
+      - name: Secret LICENCE_OBFUSCATION présent
+        shell: bash
+        run: |
+          if [ ${#LICENCE_OBFUSCATION} -ne 44 ]; then
+            echo "::error::Secret LICENCE_OBFUSCATION absent ou invalide (44 caractères base64) : Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+        env:
+          LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
+      - uses: actions/checkout@v5
+      - name: Version
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME différent de la version de Cargo.toml (v$VERSION)."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc,x86_64-unknown-linux-musl
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.XWIN_CACHE_DIR }}
+          key: xwin-${{ runner.os }}-v1
+      - name: Outils (cargo-xwin, clang, lld, musl)
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang lld llvm musl-tools file zip
+          cargo install cargo-xwin --locked
+      - name: Interface
+        working-directory: ui
+        run: npm ci && npm run build
+      - name: Windows (Ocekour.exe, ocekour-headless.exe)
+        run: cargo xwin build --release --target x86_64-pc-windows-msvc -p ocekour -p ocekour-headless --features ocekour/custom-protocol
+        env:
+          OCEKOUR_RELEASE: '1'
+          LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
+      - name: Linux (ocekour-headless statique)
+        run: cargo build --release -p ocekour-headless --target x86_64-unknown-linux-musl
+        env:
+          OCEKOUR_RELEASE: '1'
+          LICENCE_OBFUSCATION: ${{ secrets.LICENCE_OBFUSCATION }}
+      - name: Paquet
+        run: scripts/paquet.sh dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: Ocekour ${{ env.VERSION }}
+          body_path: dist/notes.md
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: dist/Ocekour-${{ env.VERSION }}.zip
