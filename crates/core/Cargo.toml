@@ -32,7 +32,7 @@ hmac = "0.12"
 pbkdf2 = "0.12"
 ed25519-dalek = { version = "2", features = ["pkcs8", "pem", "rand_core"] }
 flate2 = "1"
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "json", "stream", "query", "form"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "json", "stream", "query", "form", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rustls-pemfile = "2"
 rustls-native-certs = "0.8"

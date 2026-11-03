@@ -52,12 +52,15 @@ impl LicenceState {
 pub trait Reachability: Send + Sync {
     async fn check(&self) -> bool;
     fn last_delivery(&self) -> i64;
+    /// Cause du dernier échec d'envoi, affichée sur l'écran de blocage.
+    fn last_error(&self) -> Option<String> { None }
 }
 
 #[async_trait::async_trait]
 impl Reachability for crate::analytics::Analytics {
     async fn check(&self) -> bool { crate::analytics::Analytics::check(self).await }
     fn last_delivery(&self) -> i64 { crate::analytics::Analytics::last_delivery(self) }
+    fn last_error(&self) -> Option<String> { crate::analytics::Analytics::last_error(self) }
 }
 
 /// Clés acceptées par cette version.
@@ -246,13 +249,14 @@ impl LicenceManager {
     }
 
     fn blocked(&self) -> LicenceState {
+        let cause = self.reachability.lock().as_ref().and_then(|r| r.last_error());
+        let mut message = "Votre clé impose l'envoi des statistiques d'utilisation, mais le serveur de statistiques de l'équipe ne répond pas. \
+             Vérifiez le réseau (VPN, proxy, pare-feu) puis réessayez."
+            .to_string();
+        if let Some(cause) = cause { message.push_str(&format!("\n\nDétail : {cause}")); }
         LicenceState {
             info: self.info(),
-            message: Some(
-                "Votre clé impose l'envoi des statistiques d'utilisation, mais le serveur de statistiques de l'équipe ne répond pas. \
-                 Vérifiez le réseau (VPN ?) puis réessayez."
-                    .into(),
-            ),
+            message: Some(message),
             ..LicenceState::of("blocked")
         }
     }
@@ -293,6 +297,7 @@ mod tests {
     impl Reachability for Reach {
         async fn check(&self) -> bool { self.calls.fetch_add(1, Ordering::SeqCst); self.ok.load(Ordering::SeqCst) }
         fn last_delivery(&self) -> i64 { self.last.load(Ordering::SeqCst) }
+        fn last_error(&self) -> Option<String> { (!self.ok.load(Ordering::SeqCst)).then(|| "le serveur répond HTTP 403".into()) }
     }
     fn reach(ok: bool) -> Arc<Reach> { Arc::new(Reach { ok: AtomicBool::new(ok), calls: AtomicUsize::new(0), last: AtomicI64::new(0) }) }
 
@@ -376,7 +381,9 @@ mod tests {
         let states = Arc::new(Mutex::new(vec![]));
         let s = states.clone();
         m.on_change(move |st| s.lock().push(st.status));
-        assert_eq!(m.activate(&encode(&f, &payload(json!({ "mode": "required" })))).await.unwrap().status, "blocked");
+        let blocked = m.activate(&encode(&f, &payload(json!({ "mode": "required" })))).await.unwrap();
+        assert_eq!(blocked.status, "blocked");
+        assert!(blocked.message.unwrap().contains("Détail : le serveur répond HTTP 403"), "cause affichée");
         assert_eq!(*states.lock(), vec!["checking", "blocked"]);
         assert!(!m.usable());
         r.ok.store(true, Ordering::SeqCst);

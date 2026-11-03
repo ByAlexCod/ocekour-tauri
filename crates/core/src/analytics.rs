@@ -10,7 +10,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -81,6 +81,10 @@ pub struct Analytics {
     deliveries: AtomicU64,
     sending: tokio::sync::Mutex<()>,
     stop: tokio_util::sync::CancellationToken,
+    /// Dernier envoi réussi par le proxy du système (essayé en premier la fois suivante).
+    via_proxy: AtomicBool,
+    /// Cause du dernier échec (journal, écran de blocage), effacée au premier succès.
+    last_error: Mutex<Option<String>>,
 }
 
 impl Analytics {
@@ -92,10 +96,15 @@ impl Analytics {
             deliveries: AtomicU64::new(0),
             sending: tokio::sync::Mutex::new(()),
             stop: tokio_util::sync::CancellationToken::new(),
+            via_proxy: AtomicBool::new(false),
+            last_error: Mutex::new(None),
         })
     }
 
     pub fn last_delivery(&self) -> i64 { self.last_delivery.load(Ordering::Relaxed) }
+
+    /// Pourquoi le dernier envoi a échoué (aucun échec depuis le dernier succès : `None`).
+    pub fn last_error(&self) -> Option<String> { self.last_error.lock().clone() }
 
     pub fn enabled(&self) -> bool { (self.options.target)().is_some() }
 
@@ -208,7 +217,10 @@ impl Analytics {
                 state.queue.drain(..n).collect()
             };
             let body = serde_json::json!({ "requests": batch.iter().map(|q| q.query.clone()).collect::<Vec<_>>() }).to_string();
-            if post(&target, body).await.is_err() {
+            if let Err(error) = self.post(&target, body).await {
+                if self.last_error.lock().replace(error.clone()).as_ref() != Some(&error) {
+                    log::warn!("Statistiques non envoyées à {} : {error}", target.url);
+                }
                 let mut state = self.state.lock();
                 let rest = std::mem::take(&mut state.queue);
                 state.queue = batch.into_iter().chain(rest).collect();
@@ -216,6 +228,7 @@ impl Analytics {
                 if let Some(cb) = &self.options.on_delivery { cb(false); }
                 return;
             }
+            if self.last_error.lock().take().is_some() { log::info!("Statistiques de nouveau envoyées à {}.", target.url); }
             self.last_delivery.store(crate::text::now_ms(), Ordering::Relaxed);
             self.deliveries.fetch_add(1, Ordering::SeqCst);
             if let Some(cb) = &self.options.on_delivery { cb(true); }
@@ -229,12 +242,41 @@ impl Analytics {
     }
 }
 
-/// POST du lot vers `<url>/matomo.php`.
-async fn post(target: &Target, body: String) -> anyhow::Result<()> {
-    let url = crate::rancher::join(&target.url, "matomo.php")?;
-    let client = crate::net::http_client(&Tls { insecure: target.insecure, ca_file: None, fingerprint: None })?;
-    let res = client.post(url).header("content-type", "application/json").body(body).timeout(Duration::from_secs(10)).send().await?;
-    if res.status().as_u16() >= 300 { anyhow::bail!("Matomo : HTTP {}", res.status().as_u16()); }
+impl Analytics {
+    /// POST du lot vers `<url>/matomo.php` : en direct, puis, en cas d'échec, par le proxy du
+    /// système (réseau d'entreprise qui l'impose) ; la voie qui a marché passe ensuite en premier.
+    async fn post(&self, target: &Target, body: String) -> Result<(), String> {
+        let first = self.via_proxy.load(Ordering::Relaxed);
+        let Err(error) = post(target, &body, &self.options.user_agent, first).await else { return Ok(()) };
+        match post(target, &body, &self.options.user_agent, !first).await {
+            Ok(()) => {
+                self.via_proxy.store(!first, Ordering::Relaxed);
+                Ok(())
+            }
+            Err(other) if other == error => Err(error),
+            Err(other) => {
+                let (direct, proxy) = if first { (other, error) } else { (error, other) };
+                Err(format!("{direct} ; par le proxy du système : {proxy}"))
+            }
+        }
+    }
+}
+
+async fn post(target: &Target, body: &str, user_agent: &str, system_proxy: bool) -> Result<(), String> {
+    let url = crate::rancher::join(&target.url, "matomo.php").map_err(|e| e.to_string())?;
+    let tls = Tls { insecure: target.insecure, ca_file: None, fingerprint: None };
+    let client = if system_proxy { crate::net::http_client_system_proxy(&tls) } else { crate::net::http_client(&tls) }.map_err(|e| e.to_string())?;
+    let res = client
+        .post(url.clone())
+        .header("content-type", "application/json")
+        .header("user-agent", user_agent)
+        .body(body.to_string())
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| crate::net::from_reqwest(&e, url.as_str()).message)?;
+    let status = res.status().as_u16();
+    if status >= 300 { return Err(format!("le serveur répond HTTP {status}")); }
     Ok(())
 }
 
@@ -260,19 +302,20 @@ mod tests {
 
     struct Matomo {
         received: Arc<Mutex<Vec<HashMap<String, String>>>>,
-        fail_next: Arc<AtomicBool>,
+        /// Matomo en panne tant que vrai (l'envoi est retenté par le proxy : un seul échec ne suffit plus).
+        down: Arc<AtomicBool>,
         url: String,
         _server: http::TestServer,
     }
 
     async fn matomo() -> Matomo {
         let received = Arc::new(Mutex::new(vec![]));
-        let fail_next = Arc::new(AtomicBool::new(false));
-        let (r, f) = (received.clone(), fail_next.clone());
+        let down = Arc::new(AtomicBool::new(false));
+        let (r, f) = (received.clone(), down.clone());
         let server = http::start(0, None, http::handler(move |req: Req| {
             let (r, f) = (r.clone(), f.clone());
             async move {
-                let ok = req.path == "/matomo/matomo.php" && !f.swap(false, Ordering::SeqCst);
+                let ok = req.path == "/matomo/matomo.php" && !f.load(Ordering::SeqCst);
                 if ok {
                     for q in req.json()["requests"].as_array().unwrap() {
                         let q = q.as_str().unwrap().trim_start_matches('?');
@@ -283,7 +326,7 @@ mod tests {
             }
         }))
         .await;
-        Matomo { received, fail_next, url: format!("{}/matomo", server.url), _server: server }
+        Matomo { received, down, url: format!("{}/matomo", server.url), _server: server }
     }
 
     fn make(m: &Matomo, dir: &std::path::Path, enabled: Arc<AtomicBool>, dimension: Option<u64>) -> Arc<Analytics> {
@@ -334,13 +377,16 @@ mod tests {
         assert_eq!(first_id, stats_id);
         // Matomo injoignable : file gardée.
         m.received.lock().clear();
-        m.fail_next.store(true, Ordering::SeqCst);
+        m.down.store(true, Ordering::SeqCst);
         stats.event(&AnalyticsEvent::new("Export", "ndjson", None));
         stats.flush().await;
         assert!(m.received.lock().is_empty());
+        assert!(stats.last_error().is_some_and(|e| e.contains("HTTP 503")), "{:?}", stats.last_error());
+        m.down.store(false, Ordering::SeqCst);
         stats.event(&AnalyticsEvent::new("Export", "text", None));
         stats.flush().await;
         assert_eq!(m.received.lock().iter().map(|q| q["e_a"].clone()).collect::<Vec<_>>(), vec!["ndjson", "text"]);
+        assert_eq!(stats.last_error(), None, "erreur effacée au premier envoi réussi");
         // Troncature.
         m.received.lock().clear();
         stats.event(&AnalyticsEvent::new("Erreur", &"x".repeat(1000), None));
@@ -363,8 +409,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let stats = make(&m, dir.path(), Arc::new(AtomicBool::new(true)), None);
         for _ in 0..20 { assert!(stats.check().await); }
-        m.fail_next.store(true, Ordering::SeqCst);
+        m.down.store(true, Ordering::SeqCst);
         assert!(!stats.check().await);
+        m.down.store(false, Ordering::SeqCst);
         assert!(stats.check().await);
     }
 }

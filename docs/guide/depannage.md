@@ -24,7 +24,7 @@
 | _Clé invalide ou altérée_                         | Un caractère manque ou a changé : recopiez-la depuis le message d'origine    |
 | _Clé signée par « … », inconnue de cette version_ | Clé émise pour une version plus récente : mettez Ocekour à jour              |
 | _Cette clé a été révoquée_                        | Demandez une nouvelle clé à l'administrateur                                 |
-| _Serveur de statistiques injoignable_             | Votre clé impose le suivi : vérifiez le réseau ou le VPN, puis **Réessayer** |
+| _Serveur de statistiques injoignable_             | Votre clé impose le suivi : la ligne **Détail** donne la cause (DNS, pare-feu, proxy, certificat, HTTP 403…) ; vérifiez le réseau, le VPN ou le proxy, puis **Réessayer**. Poste sans accès au serveur de statistiques : demandez une clé « Suivi si possible » |
 
 ## Questions fréquentes
 

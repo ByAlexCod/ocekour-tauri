@@ -44,7 +44,7 @@ anonymes](configuration.md#statistiques-dutilisation) :
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Sans suivi        | Aucune statistique                                                                                                                                                             |
 | Suivi si possible | Statistiques envoyées quand le serveur de l'équipe est joignable                                                                                                               |
-| Suivi obligatoire | Ocekour doit joindre le serveur de statistiques de l'équipe pour fonctionner. S'il est injoignable (hors réseau, VPN coupé…), un écran l'indique, avec un bouton **Réessayer** |
+| Suivi obligatoire | Ocekour doit joindre le serveur de statistiques de l'équipe pour fonctionner. S'il est injoignable (hors réseau, VPN coupé…), un écran l'indique, avec la cause et un bouton **Réessayer**. Le proxy configuré dans Windows (Options Internet) est utilisé si la connexion directe échoue |
 
 Le type de la clé et son libellé sont visibles dans **Paramètres → Licence**, qui propose
 aussi **Changer de clé**.

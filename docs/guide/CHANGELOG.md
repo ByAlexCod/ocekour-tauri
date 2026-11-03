@@ -25,6 +25,15 @@
   saisie de la clé d'activation (ils étaient perdus).
 - L'exe s'appelle désormais `Ocekour.exe` (sans numéro de version).
 
+**Statistiques (suivi obligatoire)**
+
+- Réseau d'entreprise qui impose un proxy : si l'envoi direct au serveur de statistiques
+  échoue, Ocekour passe par le proxy configuré dans Windows (Options Internet, ou variables
+  `HTTPS_PROXY`/`HTTP_PROXY`) ; la voie qui marche est retenue.
+- L'écran « serveur de statistiques injoignable » donne la cause exacte (DNS, pare-feu,
+  certificat, réponse HTTP…), aussi écrite dans le journal.
+- Les envois portent un User-Agent (certains pare-feux refusent les requêtes sans).
+
 **Téléchargement de l'historique (« Télécharger… ») corrigé**
 
 - Topic Kafka en « Tout (depuis le début) » : messages dans l'ordre chronologique, toutes

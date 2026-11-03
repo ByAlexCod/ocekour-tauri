@@ -180,16 +180,22 @@ pub fn rustls_config(tls: &Tls) -> Result<ClientConfig, SourceError> {
 }
 
 /// Client HTTP(S) pour ces réglages TLS (mis en cache). Aucun proxy (comme Ocekour 1.x).
-pub fn http_client(tls: &Tls) -> Result<reqwest::Client, SourceError> {
-    static CACHE: once_cell::sync::Lazy<Mutex<HashMap<(bool, Option<String>, Option<String>), reqwest::Client>>> =
-        once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
-    let key = (tls.insecure, if tls.insecure { None } else { tls.ca_file.clone() }, if tls.insecure { None } else { tls.fingerprint.clone() });
+pub fn http_client(tls: &Tls) -> Result<reqwest::Client, SourceError> { build_client(tls, false) }
+
+/// Même client, mais passant par le proxy du système (Windows : Options Internet ; sinon
+/// HTTPS_PROXY / HTTP_PROXY / NO_PROXY). Sans proxy configuré : connexion directe.
+pub fn http_client_system_proxy(tls: &Tls) -> Result<reqwest::Client, SourceError> { build_client(tls, true) }
+
+fn build_client(tls: &Tls, system_proxy: bool) -> Result<reqwest::Client, SourceError> {
+    type Key = (bool, Option<String>, Option<String>, bool);
+    static CACHE: once_cell::sync::Lazy<Mutex<HashMap<Key, reqwest::Client>>> = once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+    let key = (tls.insecure, if tls.insecure { None } else { tls.ca_file.clone() }, if tls.insecure { None } else { tls.fingerprint.clone() }, system_proxy);
     if let Some(c) = CACHE.lock().get(&key) { return Ok(c.clone()); }
     let mut config = rustls_config(tls)?;
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-    let client = reqwest::Client::builder()
-        .use_preconfigured_tls(config)
-        .no_proxy()
+    let mut builder = reqwest::Client::builder().use_preconfigured_tls(config);
+    if !system_proxy { builder = builder.no_proxy(); }
+    let client = builder
         .connect_timeout(Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none())
         .pool_idle_timeout(Duration::from_secs(60))

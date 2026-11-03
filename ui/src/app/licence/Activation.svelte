@@ -53,7 +53,7 @@
     {#if view === 'checking'}
       <p class="text-sm text-slate-600 dark:text-slate-300">Connexion au serveur de statistiques de l'équipe…</p>
     {:else if view === 'blocked'}
-      <p class="text-sm text-slate-700 dark:text-slate-200">{current.message}</p>
+      <p class="whitespace-pre-line text-sm text-slate-700 dark:text-slate-200">{current.message}</p>
       <p class="mt-2 text-xs text-slate-500">Clé « {current.info?.label} » · {modeLabel} · {current.info?.id}</p>
       <div class="mt-5 flex gap-2">
         <button type="button" class="btn-primary" disabled={busy} onclick={retry}>{busy ? 'Vérification…' : 'Réessayer'}</button>
@@ -64,7 +64,7 @@
         Collez la clé d'activation qui vous a été remise (elle commence par <code>OCEKOUR1-</code>).
       </p>
       {#if current.message && !licence.changing}
-        <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">{current.message}</p>
+        <p class="mt-2 whitespace-pre-line text-sm text-amber-700 dark:text-amber-300">{current.message}</p>
       {/if}
       <textarea
         class="input mt-3 h-28 w-full resize-none font-mono text-xs break-all"
