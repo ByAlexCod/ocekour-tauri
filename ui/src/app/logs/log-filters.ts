@@ -7,6 +7,8 @@ import { getFieldDeep } from './parser';
 
 export type RuleMode = 'exact' | 'contains' | 'regex';
 export type RuleAction = 'hide' | 'only';
+/** Combinaison des règles d'une même action : au moins une (OU) ou toutes (ET). */
+export type RulesJoin = 'any' | 'all';
 
 export interface LogFilterRule {
   id: string;
@@ -82,24 +84,19 @@ export function compileRules(rules: readonly LogFilterRule[]): CompiledRule[] {
 }
 
 /**
- * Une ligne passe-t-elle les règles ? Liste blanche (`only`) d'abord (OU entre elles), puis liste
- * noire (`hide`, OU entre elles) qui l'emporte. Sans règle : tout passe.
+ * Une ligne passe-t-elle les règles ? Liste blanche (`only`) d'abord, puis liste noire (`hide`) qui
+ * l'emporte. `join` combine les règles d'une même action : `any` (OU, par défaut) — gardée si une
+ * règle « Garder seul » correspond, masquée si une règle « Masquer » correspond ; `all` (ET) — gardée
+ * si toutes les règles « Garder seul » correspondent, masquée si toutes les règles « Masquer »
+ * correspondent. Sans règle : tout passe.
  */
-export function rulesAccept(entry: LogEntry, compiled: readonly CompiledRule[]): boolean {
+export function rulesAccept(entry: LogEntry, compiled: readonly CompiledRule[], join: RulesJoin = 'any'): boolean {
   if (!compiled.length) return true;
-  let hasOnly = false;
-  let keptByOnly = false;
-  for (const rule of compiled) {
-    if (rule.action === 'only') {
-      hasOnly = true;
-      if (rule.test(entry)) keptByOnly = true;
-    }
-  }
-  if (hasOnly && !keptByOnly) return false;
-  for (const rule of compiled) {
-    if (rule.action === 'hide' && rule.test(entry)) return false;
-  }
-  return true;
+  const only = compiled.filter((r) => r.action === 'only');
+  const hide = compiled.filter((r) => r.action === 'hide');
+  const match = (rules: CompiledRule[]) => (join === 'all' ? rules.every((r) => r.test(entry)) : rules.some((r) => r.test(entry)));
+  if (only.length && !match(only)) return false;
+  return !(hide.length && match(hide));
 }
 
 /** Nouvelle règle vide (valeurs par défaut). */
@@ -114,4 +111,11 @@ export function newRule(patch: Partial<LogFilterRule> = {}): LogFilterRule {
     action: 'hide',
     ...patch,
   };
+}
+
+/** Résumé d'une règle sur une ligne (encart replié) : « Masquer path contient /health ». */
+export function describeRule(rule: LogFilterRule): string {
+  const action = rule.action === 'hide' ? 'Masquer' : 'Garder';
+  const mode = rule.mode === 'exact' ? '=' : rule.mode === 'regex' ? '~' : 'contient';
+  return `${action} ${rule.field || '@message'} ${mode} ${rule.value}`;
 }

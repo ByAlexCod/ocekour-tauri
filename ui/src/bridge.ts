@@ -96,7 +96,7 @@ function makeApi(call: Call, on: On): OcekourApi {
       validateText: (text) => call('config:validateText', text),
       saveText: (text) => call('config:saveText', text),
       editProfile: (match, edit) => call('config:editProfile', match, edit),
-      saveFilterPreset: (name, rules) => call('config:saveFilterPreset', name, rules),
+      saveFilterPreset: (name, rules, join) => call('config:saveFilterPreset', name, rules, join ?? null),
       deleteFilterPreset: (name) => call('config:deleteFilterPreset', name),
       renameFilterPreset: (name, to) => call('config:renameFilterPreset', name, to),
       toggleFavorite: (key) => call('config:toggleFavorite', key),

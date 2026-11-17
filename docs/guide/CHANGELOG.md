@@ -25,6 +25,16 @@
   saisie de la clé d'activation (ils étaient perdus).
 - L'exe s'appelle désormais `Ocekour.exe` (sans numéro de version).
 
+**Filtres**
+
+- Règles **combinables en ET** : *Combiner : OU | ET* en tête de l'encart (ex. garder seulement les
+  erreurs **et** les appels `/api`) ; mémorisé par onglet et dans les filtres enregistrés.
+- **+ Combiner avec…** ajoute les règles d'un filtre enregistré à celles de l'onglet (plusieurs
+  filtres enregistrés à la fois).
+- Encart **repliable sans masquer les logs** : replié, une seule ligne résume les règles (un clic
+  active / désactive une règle) ; déplié, il occupe au plus un tiers de la hauteur. État mémorisé ;
+  charger un filtre enregistré ne le déplie plus.
+
 **Statistiques (suivi obligatoire)**
 
 - Réseau d'entreprise qui impose un proxy : si l'envoi direct au serveur de statistiques

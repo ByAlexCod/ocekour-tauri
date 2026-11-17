@@ -502,7 +502,7 @@ export interface OcekourApi {
     /** Modifie (ou crée en tête de liste) le profil dont `match` est exactement celui donné. */
     editProfile(match: string, edit: ProfileEdit): Promise<ConfigState>;
     /** Enregistre (ou remplace) un filtre nommé, réutilisable dans tous les onglets. */
-    saveFilterPreset(name: string, rules: StoredFilterRule[]): Promise<ConfigState>;
+    saveFilterPreset(name: string, rules: StoredFilterRule[], join?: 'any' | 'all'): Promise<ConfigState>;
     /** Supprime le filtre enregistré de ce nom. */
     deleteFilterPreset(name: string): Promise<ConfigState>;
     /** Renomme un filtre enregistré (refusé si le nouveau nom est déjà pris). */

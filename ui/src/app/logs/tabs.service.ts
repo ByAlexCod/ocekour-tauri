@@ -126,6 +126,7 @@ export class TabsService {
       levels: [...tab.levels()],
       searchMode: tab.searchMode(),
       rules: tab.rules(),
+      ...(tab.rulesJoin() === 'all' ? { rulesJoin: 'all' as const } : {}),
     };
     if (tab instanceof AssemblySession) {
       base.hiddenSources = [...tab.hiddenSources()];
@@ -219,6 +220,7 @@ export class TabsService {
       if (state.levels) tab.levels.set(new Set(state.levels));
       if (state.searchMode) tab.searchMode.set(state.searchMode);
       if (state.rules) tab.rules.set(state.rules);
+      if (state.rulesJoin) tab.rulesJoin.set(state.rulesJoin);
       if (tab instanceof AssemblySession) {
         if (state.hiddenSources) tab.hiddenSources.set(new Set(state.hiddenSources));
         if (state.reorderMs !== undefined) tab.reorderMs.set(state.reorderMs);

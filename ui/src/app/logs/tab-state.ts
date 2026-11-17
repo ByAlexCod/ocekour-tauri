@@ -1,6 +1,6 @@
 import type { StreamOptions } from '../../../shared/api';
 import type { SearchOptions } from './filter';
-import type { LogFilterRule } from './log-filters';
+import type { LogFilterRule, RulesJoin } from './log-filters';
 import type { Level } from './parser';
 import type { TabTarget } from './target';
 
@@ -13,6 +13,8 @@ export interface TabState {
   searchMode?: 'filter' | 'highlight';
   /** Règles de filtre (masquer / garder seul). */
   rules?: LogFilterRule[];
+  /** Combinaison des règles (OU par défaut). */
+  rulesJoin?: RulesJoin;
   prefix?: string;
   /** Assemblage : sources masquées (ids de membres). */
   hiddenSources?: string[];

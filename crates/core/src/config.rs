@@ -225,6 +225,8 @@ pub fn config_schema() -> S {
             z::array(z::object(vec![
                 ("name", z::string().min(1)),
                 ("rules", z::array(stored_filter_rule_schema()).default(json!([]))),
+                // Combinaison des règles : « any » (OU, par défaut) ou « all » (ET).
+                ("join", z::enumeration(&["any", "all"]).optional()),
             ]))
             .default(json!([])),
         ),
@@ -482,6 +484,9 @@ pub struct StoredFilterRule {
 pub struct FilterPreset {
     pub name: String,
     pub rules: Vec<StoredFilterRule>,
+    /// `all` : toutes les règles doivent correspondre (ET) ; absent ou `any` : au moins une (OU).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub join: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

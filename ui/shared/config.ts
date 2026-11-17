@@ -235,6 +235,8 @@ export const StoredFilterRuleSchema = z.object({
 export const FilterPresetSchema = z.object({
   name: z.string().min(1),
   rules: z.array(StoredFilterRuleSchema).default([]),
+  /** Combinaison des règles : `all` (ET) ; absent ou `any` : OU. */
+  join: z.enum(['any', 'all']).optional(),
 });
 
 export const PreferencesSchema = z.object({

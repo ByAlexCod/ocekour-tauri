@@ -193,12 +193,16 @@ fn current_presets(config: &ConfigStore) -> Vec<Value> {
     config.state().config["filterPresets"].as_array().cloned().unwrap_or_default()
 }
 
-/// Enregistre (ou remplace, par nom) un filtre nommé.
-pub fn save_filter_preset(config: &ConfigStore, name: &Value, rules: &Value) -> anyhow::Result<ConfigState> {
+/// Enregistre (ou remplace, par nom) un filtre nommé ; `join` : « all » (ET) ou « any » (OU).
+pub fn save_filter_preset(config: &ConfigStore, name: &Value, rules: &Value, join: &Value) -> anyhow::Result<ConfigState> {
     let name = preset_name(name)?;
     let rules = z::array(stored_filter_rule_schema()).parse(rules).map_err(issues)?;
+    if !(join.is_null() || matches!(join.as_str(), Some("any" | "all"))) {
+        anyhow::bail!("Combinaison des règles inconnue : « all » (ET) ou « any » (OU) attendu.");
+    }
     let mut next: Vec<Value> = current_presets(config).into_iter().filter(|p| p["name"] != json!(name)).collect();
-    next.push(json!({ "name": name, "rules": rules }));
+    // « any » est le comportement par défaut : non écrit, config.yaml reste inchangé.
+    next.push(if join.as_str() == Some("all") { json!({ "name": name, "rules": rules, "join": "all" }) } else { json!({ "name": name, "rules": rules }) });
     write_presets(config, next)
 }
 
@@ -262,17 +266,20 @@ mod tests {
     fn filtres_enregistres() {
         let (_d, s) = store("");
         let rules = json!([{ "field": "http.path", "value": "/health" }]);
-        save_filter_preset(&s, &json!("Sans santé"), &rules).unwrap();
-        save_filter_preset(&s, &json!("Autre"), &json!([])).unwrap();
+        save_filter_preset(&s, &json!("Sans santé"), &rules, &Value::Null).unwrap();
+        save_filter_preset(&s, &json!("Autre"), &json!([]), &json!("all")).unwrap();
         let presets = &s.state().config["filterPresets"];
         assert_eq!(presets[0]["name"], json!("Autre"));
+        assert_eq!(presets[0]["join"], json!("all"));
+        assert!(presets[1].get("join").is_none(), "OU (défaut) non écrit");
         assert_eq!(presets[1]["rules"][0], json!({ "enabled": true, "field": "http.path", "mode": "contains", "value": "/health", "caseSensitive": false, "action": "hide" }));
         assert!(rename_filter_preset(&s, &json!("Autre"), &json!("Sans santé")).unwrap_err().to_string().contains("existe déjà"));
         rename_filter_preset(&s, &json!("Autre"), &json!("Zéro")).unwrap();
         delete_filter_preset(&s, &json!("Sans santé")).unwrap();
         delete_filter_preset(&s, &json!("Zéro")).unwrap();
         assert!(!text(&s).contains("filterPresets"));
-        assert!(save_filter_preset(&s, &json!("  "), &json!([])).is_err());
+        assert!(save_filter_preset(&s, &json!("  "), &json!([]), &Value::Null).is_err());
+        assert!(save_filter_preset(&s, &json!("x"), &json!([]), &json!("et")).is_err());
     }
 
     #[test]

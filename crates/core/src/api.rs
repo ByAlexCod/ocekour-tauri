@@ -98,7 +98,7 @@ async fn dispatch(app: &Arc<App>, caller: &Caller, channel: &str, args: &[Value]
         "config:setFichiers" => to_value(crate::settings::set_fichiers(config, arg(args, 0)).map_err(e)?),
         "config:toggleFavorite" => to_value(crate::settings::toggle_favorite(config, &non_empty(args, 0, "favori")?).map_err(e)?),
         "config:editProfile" => to_value(crate::settings::edit_profile(config, &string(args, 0, "match", 1_000)?, arg(args, 1)).map_err(e)?),
-        "config:saveFilterPreset" => to_value(crate::settings::save_filter_preset(config, arg(args, 0), arg(args, 1)).map_err(e)?),
+        "config:saveFilterPreset" => to_value(crate::settings::save_filter_preset(config, arg(args, 0), arg(args, 1), arg(args, 2)).map_err(e)?),
         "config:deleteFilterPreset" => to_value(crate::settings::delete_filter_preset(config, arg(args, 0)).map_err(e)?),
         "config:renameFilterPreset" => to_value(crate::settings::rename_filter_preset(config, arg(args, 0), arg(args, 1)).map_err(e)?),
 

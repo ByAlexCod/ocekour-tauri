@@ -14,7 +14,7 @@
   import { buildMatcher, type Matcher, type SearchOptions, segments } from './filter';
   import { MESSAGE_COLUMN, wrappedValue } from './json-cell';
   import type { LogEntry } from './log-buffer';
-  import { compileRules, type LogFilterRule, newRule, ruleError } from './log-filters';
+  import { compileRules, describeRule, type LogFilterRule, newRule, ruleError } from './log-filters';
   import { ROW_HEIGHT, type LogSession } from './log-session';
   import { type Level, LEVELS } from './parser';
   import { resolveProfile } from './profiles';
@@ -185,7 +185,8 @@
     const search = s.search();
     const m = matcher;
     const rules = s.rules();
-    const key = JSON.stringify([[...levels].sort(), mode, search, rules]);
+    const rulesJoin = s.rulesJoin();
+    const key = JSON.stringify([[...levels].sort(), mode, search, rules, rulesJoin]);
     untrack(() => {
       if (key === s.filterKey) return;
       const textChanged = s.filterKey !== undefined && search.text !== s.filterText;
@@ -197,6 +198,7 @@
           matcher: mode === 'filter' ? m : undefined,
           highlight: mode === 'highlight' ? m : undefined,
           rules: compileRules(rules),
+          rulesJoin,
         });
       clearTimeout(filterTimer);
       if (textChanged) filterTimer = setTimeout(apply, SEARCH_DEBOUNCE_MS);
@@ -531,13 +533,33 @@
   }
 
   // --- Filtres (encart de règles) -------------------------------------------------------------------
-  let filtersOpen = $state(false);
+  // Encart replié : une seule ligne résume les règles (cliquer une règle l'active / la désactive),
+  // les logs gardent la place. Ouvert ou replié : mémorisé pour les autres onglets et le lancement suivant.
+  const FILTERS_OPEN_KEY = 'ocekour.filtres.ouverts';
+  let filtersOpen = $state(readFiltersOpen());
+  function readFiltersOpen() {
+    try {
+      return localStorage.getItem(FILTERS_OPEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+  function setFiltersOpen(open: boolean) {
+    filtersOpen = open;
+    try {
+      localStorage.setItem(FILTERS_OPEN_KEY, open ? '1' : '0');
+    } catch {
+      // préférence non mémorisée
+    }
+  }
   const rules = $derived(s.rules());
+  const rulesJoin = $derived(s.rulesJoin());
   const activeRuleCount = $derived(rules.filter((r) => r.enabled && r.value).length);
+  const filledRules = $derived(rules.filter((r) => r.value));
 
   function addRule() {
     s.rules.update((list) => [...list, newRule()]);
-    filtersOpen = true;
+    setFiltersOpen(true);
   }
   const removeRule = (id: string) => s.rules.update((list) => list.filter((r) => r.id !== id));
   const updateRule = (id: string, patch: Partial<LogFilterRule>) => s.rules.update((list) => list.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -547,18 +569,24 @@
   let presetName = $state('');
   const canSavePreset = $derived(!!presetName.trim() && rules.some((r) => r.value));
 
-  function applyPreset(name: string) {
+  /** Charge un filtre enregistré : remplace les règles, ou (`combine`) les ajoute aux règles actuelles. */
+  function applyPreset(name: string, combine = false) {
     const preset = presets.find((p) => p.name === name);
     if (!preset) return;
-    s.rules.set(preset.rules.map((r) => newRule(r)));
-    presetName = preset.name;
-    filtersOpen = true;
+    const added = preset.rules.map((r) => newRule(r));
+    if (combine) {
+      s.rules.update((list) => [...list, ...added]);
+    } else {
+      s.rules.set(added);
+      s.rulesJoin.set(preset.join ?? 'any');
+      presetName = preset.name;
+    }
   }
 
   function saveCurrentPreset() {
     const name = presetName.trim();
     if (!name) return;
-    void configService.saveFilterPreset(name, s.rules().map(({ id: _id, ...rule }) => rule));
+    void configService.saveFilterPreset(name, s.rules().map(({ id: _id, ...rule }) => rule), s.rulesJoin());
   }
 
   function deletePreset(name: string) {
@@ -809,7 +837,7 @@
       role="switch"
       aria-checked={filtersOpen}
       title={filtersOpen ? 'Replier les filtres' : 'Masquer / garder des lignes par champ (exact ou regex)'}
-      onclick={() => (filtersOpen = !filtersOpen)}
+      onclick={() => setFiltersOpen(!filtersOpen)}
     >
       <span class="mr-0.5 inline-block text-[10px]">{filtersOpen ? '▾' : '▸'}</span>
       Filtres
@@ -817,20 +845,37 @@
     </button>
   </div>
 
+  {#snippet joinSwitch()}
+    <span class="text-slate-500">Combiner :</span>
+    <div class="flex rounded border border-slate-300 dark:border-slate-700" role="radiogroup" aria-label="Combinaison des règles">
+      <button type="button" role="radio" class="seg" aria-checked={rulesJoin === 'any'} title="Une ligne est gardée (ou masquée) si au moins une règle correspond" onclick={() => s.rulesJoin.set('any')}>OU</button>
+      <button type="button" role="radio" class="seg" aria-checked={rulesJoin === 'all'} title="Une ligne est gardée (ou masquée) seulement si toutes les règles correspondent" onclick={() => s.rulesJoin.set('all')}>ET</button>
+    </div>
+  {/snippet}
+
   {#if filtersOpen}
-    <div class="flex max-h-[45vh] flex-col gap-1.5 overflow-y-auto border-b border-slate-200 px-3 py-2 text-xs dark:border-slate-800">
+    <div class="flex max-h-[30vh] flex-col gap-1.5 overflow-y-auto border-b border-slate-200 px-3 py-2 text-xs dark:border-slate-800">
       <div class="flex flex-wrap items-center gap-1.5 border-b border-slate-100 pb-1.5 dark:border-slate-800/60">
+        <button type="button" class="btn px-1.5 py-0.5" title="Replier les filtres (les règles restent appliquées)" aria-expanded="true" onclick={() => setFiltersOpen(false)}>▴ Replier</button>
+        {@render joinSwitch()}
+        <span class="mx-1 text-slate-300 dark:text-slate-700">|</span>
         <span class="text-slate-500">Filtre enregistré :</span>
-        <select class="input w-44 py-0.5" aria-label="Charger un filtre enregistré" value={presetName} onchange={(e) => applyPreset(e.currentTarget.value)}>
+        <select class="input w-40 py-0.5" aria-label="Charger un filtre enregistré (remplace les règles)" title="Remplace les règles actuelles" value={presetName} onchange={(e) => applyPreset(e.currentTarget.value)}>
           <option value="">— aucun —</option>
           {#each presets as preset (preset.name)}<option value={preset.name}>{preset.name}</option>{/each}
         </select>
+        {#if presets.length}
+          <select class="input w-36 py-0.5" aria-label="Ajouter un filtre enregistré aux règles actuelles" title="Ajoute ses règles à celles déjà là (filtres combinés)" value="" onchange={(e) => { applyPreset(e.currentTarget.value, true); e.currentTarget.value = ''; }}>
+            <option value="">+ Combiner avec…</option>
+            {#each presets as preset (preset.name)}<option value={preset.name}>{preset.name}</option>{/each}
+          </select>
+        {/if}
         {#if presetName && presets.length}
           <button type="button" class="btn px-1.5 py-0.5 text-slate-400 hover:text-red-500" title="Supprimer ce filtre enregistré" onclick={() => deletePreset(presetName)}>Supprimer</button>
         {/if}
         <span class="mx-1 text-slate-300 dark:text-slate-700">|</span>
-        <input class="input w-40 py-0.5" placeholder="nom du filtre" aria-label="Nom du filtre à enregistrer" bind:value={presetName} onkeydown={(e) => e.key === 'Enter' && saveCurrentPreset()} />
-        <button type="button" class="btn py-0.5" title="Enregistrer les règles actuelles sous ce nom (réutilisable dans tous les onglets)" disabled={!canSavePreset} onclick={saveCurrentPreset}>Enregistrer</button>
+        <input class="input w-36 py-0.5" placeholder="nom du filtre" aria-label="Nom du filtre à enregistrer" bind:value={presetName} onkeydown={(e) => e.key === 'Enter' && saveCurrentPreset()} />
+        <button type="button" class="btn py-0.5" title="Enregistrer les règles actuelles et leur combinaison sous ce nom (réutilisable dans tous les onglets)" disabled={!canSavePreset} onclick={saveCurrentPreset}>Enregistrer</button>
       </div>
       {#each rules as rule (rule.id)}
         <div class="flex flex-wrap items-center gap-1.5">
@@ -863,10 +908,37 @@
         <option value="@line"></option>
         {#each profile.columns as col (col)}<option value={col}></option>{/each}
       </datalist>
+      <datalist id="filtre-champs">
+        <option value="@message"></option>
+        <option value="@line"></option>
+        {#each profile.columns as col (col)}<option value={col}></option>{/each}
+      </datalist>
       <div class="flex items-center gap-2">
         <button type="button" class="btn py-0.5" onclick={addRule}>+ Ajouter une règle</button>
         {#if rules.length}<button type="button" class="btn py-0.5" onclick={() => s.rules.set([])}>Tout effacer</button>{/if}
-        <span class="text-slate-500">Masquer = liste noire · Garder seul = liste blanche · champ <code>path</code>, <code>@message</code> (message) ou <code>@line</code> (ligne brute).</span>
+        <span class="text-slate-500">Masquer = liste noire · Garder seul = liste blanche · OU : une règle suffit, ET : toutes · champ <code>path</code>, <code>@message</code> ou <code>@line</code>.</span>
+      </div>
+    </div>
+  {:else if filledRules.length}
+    <!-- Encart replié : une ligne, les logs gardent la place. -->
+    <div class="flex items-center gap-1.5 overflow-hidden border-b border-slate-200 px-3 py-1 text-xs dark:border-slate-800">
+      <button type="button" class="btn shrink-0 px-1.5 py-0.5" title="Déplier les filtres" aria-expanded="false" onclick={() => setFiltersOpen(true)}>▸ Filtres</button>
+      {#if activeRuleCount > 1}<span class="shrink-0 text-slate-500" title="Combinaison des règles actives">{rulesJoin === 'all' ? 'ET' : 'OU'}</span>{/if}
+      <div class="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+        {#each filledRules as rule (rule.id)}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={rule.enabled}
+            class="shrink-0 rounded border px-1.5 py-0.5 font-mono whitespace-nowrap {rule.enabled
+              ? rule.action === 'hide'
+                ? 'border-red-300 text-red-700 dark:border-red-800 dark:text-red-300'
+                : 'border-sky-300 text-sky-700 dark:border-sky-800 dark:text-sky-300'
+              : 'border-slate-200 text-slate-400 line-through dark:border-slate-800'}"
+            title={(rule.enabled ? 'Désactiver' : 'Activer') + ' : ' + describeRule(rule)}
+            onclick={() => updateRule(rule.id, { enabled: !rule.enabled })}>{describeRule(rule)}</button
+          >
+        {/each}
       </div>
     </div>
   {/if}

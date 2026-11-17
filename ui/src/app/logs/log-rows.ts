@@ -1,6 +1,6 @@
 import type { Matcher } from './filter';
 import type { LogBuffer, LogEntry } from './log-buffer';
-import { type CompiledRule, rulesAccept } from './log-filters';
+import { type CompiledRule, type RulesJoin, rulesAccept } from './log-filters';
 import type { Level } from './parser';
 import type { RowGeometry } from './row-layout';
 
@@ -16,6 +16,8 @@ export interface RowFilter {
   hiddenSources?: ReadonlySet<string>;
   /** Règles de filtre (masquer / garder seul) par champ. */
   rules?: readonly CompiledRule[];
+  /** Combinaison des règles : OU (défaut) ou ET. */
+  rulesJoin?: RulesJoin;
 }
 
 /**
@@ -88,11 +90,11 @@ export class LogRows implements RowGeometry {
 
   private accepts(entry: LogEntry): boolean {
     if (entry.notice) return true;
-    const { levels, matcher, hiddenSources, rules } = this.filter;
+    const { levels, matcher, hiddenSources, rules, rulesJoin } = this.filter;
     if (hiddenSources?.size && entry.source && hiddenSources.has(entry.source.id)) return false;
     if (levels && !levels.has(entry.parsed.level)) return false;
     if (matcher && !matcher.test(entry.haystack)) return false;
-    if (rules?.length && !rulesAccept(entry, rules)) return false;
+    if (rules?.length && !rulesAccept(entry, rules, rulesJoin)) return false;
     return true;
   }
 

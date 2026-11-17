@@ -9,7 +9,7 @@ import type {
 import { type StreamTarget, streamOptions, streamPath } from './target';
 import type { SearchOptions } from './filter';
 import { LogBuffer } from './log-buffer';
-import type { LogFilterRule } from './log-filters';
+import type { LogFilterRule, RulesJoin } from './log-filters';
 import { type RowFilter, LogRows } from './log-rows';
 import { type Level, LEVELS } from './parser';
 
@@ -48,6 +48,8 @@ export class LogSession {
   readonly searchMode = signal<'filter' | 'highlight'>('filter');
   /** Règles de filtre (masquer / garder seul) par champ. */
   readonly rules = signal<LogFilterRule[]>([]);
+  /** Combinaison des règles : OU (au moins une) ou ET (toutes). */
+  readonly rulesJoin = signal<RulesJoin>('any');
   // État d'affichage, conservé quand on passe d'un onglet à l'autre.
   /** Affichage figé : les lignes continuent d'arriver dans le tampon. */
   readonly paused = signal(false);

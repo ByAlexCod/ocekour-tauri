@@ -1,4 +1,4 @@
-import { compileRules, fieldValue, newRule, ruleError, rulesAccept } from './log-filters';
+import { compileRules, describeRule, fieldValue, newRule, ruleError, rulesAccept } from './log-filters';
 import { LogBuffer } from './log-buffer';
 
 const buffer = new LogBuffer(50);
@@ -47,6 +47,51 @@ describe('log-filters', () => {
     ]);
     expect(rulesAccept(health, rules)).toBe(true);
     expect(rulesAccept(pay, rules)).toBe(false); // gardée par only, puis masquée par hide
+  });
+
+  it('garde seul combiné : OU (une règle suffit) ou ET (toutes)', () => {
+    const rules = compileRules([
+      newRule({ field: 'level', mode: 'exact', value: 'error', action: 'only' }),
+      newRule({ field: 'path', mode: 'contains', value: 'health', action: 'only' }),
+    ]);
+    expect([health, pay, plain].map((e) => rulesAccept(e, rules, 'any'))).toEqual([true, true, false]);
+    expect([health, pay, plain].map((e) => rulesAccept(e, rules))).toEqual([true, true, false]); // OU par défaut
+    expect([health, pay, plain].map((e) => rulesAccept(e, rules, 'all'))).toEqual([false, false, false]);
+    const both = compileRules([
+      newRule({ field: 'level', mode: 'exact', value: 'error', action: 'only' }),
+      newRule({ field: 'path', mode: 'contains', value: 'api', action: 'only' }),
+    ]);
+    expect([health, pay, plain].map((e) => rulesAccept(e, both, 'all'))).toEqual([false, true, false]);
+  });
+
+  it('masquer combiné : OU masque dès qu’une règle correspond, ET seulement si toutes', () => {
+    const rules = compileRules([
+      newRule({ field: 'level', mode: 'exact', value: 'info' }),
+      newRule({ field: 'path', mode: 'exact', value: '/health' }),
+    ]);
+    const other = compileRules([
+      newRule({ field: 'level', mode: 'exact', value: 'info' }),
+      newRule({ field: 'path', mode: 'exact', value: '/api/pay' }),
+    ]);
+    expect(rulesAccept(health, rules, 'all')).toBe(false); // info ET /health : masquée
+    expect(rulesAccept(health, other, 'all')).toBe(true); // info mais pas /api/pay : gardée
+    expect(rulesAccept(health, other, 'any')).toBe(false); // info suffit en OU
+    expect(rulesAccept(plain, rules, 'all')).toBe(true);
+  });
+
+  it('ET : garder seul puis masquer, chacun combiné', () => {
+    const rules = compileRules([
+      newRule({ field: '@line', mode: 'contains', value: 'level', action: 'only' }),
+      newRule({ field: '@line', mode: 'contains', value: 'path', action: 'only' }),
+      newRule({ field: 'level', mode: 'exact', value: 'error' }),
+    ]);
+    expect([health, pay, plain].map((e) => rulesAccept(e, rules, 'all'))).toEqual([true, false, false]);
+  });
+
+  it('résume une règle sur une ligne', () => {
+    expect(describeRule(newRule({ field: 'path', value: '/health' }))).toBe('Masquer path contient /health');
+    expect(describeRule(newRule({ field: 'level', mode: 'exact', value: 'error', action: 'only' }))).toBe('Garder level = error');
+    expect(describeRule(newRule({ field: '@line', mode: 'regex', value: '^a' }))).toBe('Masquer @line ~ ^a');
   });
 
   it('ignore les règles désactivées, vides ou à regex invalide', () => {

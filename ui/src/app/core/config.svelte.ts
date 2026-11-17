@@ -54,8 +54,8 @@ class ConfigService {
     return this.apply(() => this.api?.setNotifications(patch));
   }
 
-  saveFilterPreset(name: string, rules: StoredFilterRule[]) {
-    return this.apply(() => this.api?.saveFilterPreset(name, rules));
+  saveFilterPreset(name: string, rules: StoredFilterRule[], join?: 'any' | 'all') {
+    return this.apply(() => this.api?.saveFilterPreset(name, rules, join));
   }
 
   deleteFilterPreset(name: string) {

@@ -1,7 +1,7 @@
 import { signal } from '../core/signals.svelte';
 import type { SourceErrorInfo, StreamEvent, StreamOptions, StreamState } from '../../../shared/api';
 import type { SearchOptions } from './filter';
-import type { LogFilterRule } from './log-filters';
+import type { LogFilterRule, RulesJoin } from './log-filters';
 import { type LineSource, LogBuffer, timeKey } from './log-buffer';
 import { type RowFilter, LogRows } from './log-rows';
 import { ROW_HEIGHT } from './log-session';
@@ -70,6 +70,8 @@ export class AssemblySession {
   readonly levels = signal<ReadonlySet<Level>>(new Set([...LEVELS, 'unknown']));
   readonly searchMode = signal<'filter' | 'highlight'>('filter');
   readonly rules = signal<LogFilterRule[]>([]);
+  /** Combinaison des règles : OU (au moins une) ou ET (toutes). */
+  readonly rulesJoin = signal<RulesJoin>('any');
   readonly paused = signal(false);
   readonly stickToBottom = signal(true);
   readonly seqWhenUnstuck = signal(0);
