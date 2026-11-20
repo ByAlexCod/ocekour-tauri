@@ -12,6 +12,7 @@
   import { exportContent, exportFileName } from './export';
   import { FieldActions, provideFieldActions } from './field-actions';
   import { buildMatcher, type Matcher, type SearchOptions, segments } from './filter';
+  import { COLUMN_LABELS, columnLabel, moveColumn, orderColumns } from './columns';
   import { MESSAGE_COLUMN, wrappedCell } from './json-cell';
   import type { LogEntry } from './log-buffer';
   import { compileRules, describeRule, type LogFilterRule, newRule, ruleError } from './log-filters';
@@ -111,7 +112,34 @@
   /** Marge horizontale d'une ligne (px-3) et écart entre colonnes (gap-3). */
   const ROW_PADDING = 24;
   const COLUMN_GAP = 12;
-  const fixedColumns = $derived(['@time', ...(isAssembly ? ['@source'] : []), '@level', ...(isTopic ? ['@part', '@offset', '@key'] : []), ...profile.columns]);
+  /** Colonnes possibles, dans l'ordre par défaut. */
+  const defaultColumns = $derived(['@time', ...(isAssembly ? ['@source'] : []), '@level', ...(isTopic ? ['@part', '@offset', '@key'] : []), ...profile.columns]);
+  /** Ordre et colonnes masquées posés dans cette vue (seuls, pour un assemblage, sans profil). */
+  let localLayout = $state<{ order: string[]; hidden: string[] } | null>(null);
+  const layout = $derived(localLayout ?? { order: profile.order, hidden: profile.hidden });
+  /** Toutes les colonnes, dans l'ordre choisi (masquées comprises : menu Colonnes). */
+  const allColumns = $derived(orderColumns(defaultColumns, layout.order));
+  /** Colonnes affichées, dans l'ordre ; le message suit toujours. */
+  const fixedColumns = $derived(allColumns.filter((c) => !layout.hidden.includes(c)));
+
+  /** Nouvelle disposition : tout de suite dans la vue, et enregistrée dans le profil du workload. */
+  function setLayout(order: string[], hidden: string[]) {
+    localLayout = { order, hidden };
+    if (!isAssembly && profile.key) void actions.setLayout(order, hidden);
+  }
+  const toggleHidden = (col: string) =>
+    setLayout(allColumns, layout.hidden.includes(col) ? layout.hidden.filter((c) => c !== col) : [...layout.hidden, col]);
+  const placeColumn = (col: string, target: string) => setLayout(moveColumn(allColumns, col, target), layout.hidden);
+  const resetLayout = () => setLayout([], []);
+  /** Déplacer d'un cran (menu Colonnes) : `delta` -1 vers la gauche, +1 vers la droite. */
+  function shiftColumn(col: string, delta: number) {
+    const target = allColumns[allColumns.indexOf(col) + delta];
+    if (target) placeColumn(col, target);
+  }
+  let columnsMenu = $state(false);
+  /** Glisser-déposer d'un en-tête pour réordonner. */
+  let draggedColumn = $state<string | null>(null);
+  let dropTarget = $state<string | null>(null);
   /** Colonne en cours de redimensionnement (aperçu pendant le glissement). */
   let drag = $state<{ col: string; px: number } | null>(null);
   /** Largeurs posées dans cette vue : appliquées tout de suite (et seules, pour un assemblage, sans profil). */
@@ -546,7 +574,7 @@
     expanded?: boolean;
   }
   const viewCache = new WeakMap<LogEntry, RowView>();
-  const viewKey = $derived(JSON.stringify([s.search(), s.searchMode(), profile.columns, wrapKey, fixedColumns.map(widthOf)]));
+  const viewKey = $derived(JSON.stringify([s.search(), s.searchMode(), wrapKey, fixedColumns, fixedColumns.map(widthOf)]));
 
   function row(entry: LogEntry): RowView {
     const key = viewKey;
@@ -560,14 +588,43 @@
     const w = (col: string) => `style="width:${widthOf(col)}px"`;
     // Contenu de la ligne en un seul fragment HTML (textes échappés) : bien plus rapide à
     // afficher que de nombreux petits éléments par ligne pendant le défilement.
-    let html = `<span class="shrink-0 truncate text-slate-400 tabular-nums" ${w('@time')} title="${esc(fullDate(entry))}">${esc(formatTime(entry))}</span>`;
-    if (isAssembly && entry.source) {
-      const src = entry.source;
-      html += `<span class="shrink-0 truncate font-semibold" style="width:${widthOf('@source')}px;color:${esc(src.color)}" title="${esc(src.label)}">${esc(src.label)}</span>`;
-    } else if (isAssembly) {
-      html += `<span class="shrink-0" ${w('@source')}></span>`;
-    }
+    // Cellule d'une colonne fixe ou d'un champ du profil, à sa largeur.
+    const cell = (col: string): string => {
+      switch (col) {
+        case '@time':
+          return `<span class="shrink-0 truncate text-slate-400 tabular-nums" ${w(col)} title="${esc(fullDate(entry))}">${esc(formatTime(entry))}</span>`;
+        case '@source': {
+          const src = entry.source;
+          return src
+            ? `<span class="shrink-0 truncate font-semibold" style="width:${widthOf(col)}px;color:${esc(src.color)}" title="${esc(src.label)}">${esc(src.label)}</span>`
+            : `<span class="shrink-0" ${w(col)}></span>`;
+        }
+        case '@level': {
+          const level = entry.parsed.level;
+          return `<span class="shrink-0 truncate font-semibold ${LEVEL_CLASS[level]}" ${w(col)}>${level === 'unknown' ? '' : level.toUpperCase()}</span>`;
+        }
+        case '@part':
+        case '@offset':
+        case '@key': {
+          const meta = isAssembly ? undefined : entry.meta;
+          if (!meta) return `<span class="shrink-0" ${w(col)}></span>`;
+          if (col === '@part') return `<span class="shrink-0 truncate text-right text-slate-400 tabular-nums" ${w(col)}>${esc(String(meta.partition))}</span>`;
+          if (col === '@offset')
+            return `<span class="shrink-0 truncate text-right text-slate-400 tabular-nums" ${w(col)} title="${esc(String(meta.offset))}">${esc(String(meta.offset))}</span>`;
+          return `<span class="shrink-0 truncate text-violet-700 dark:text-violet-300" ${w(col)} title="${esc(meta.key ?? '')}">${esc(meta.key ?? '')}</span>`;
+        }
+        default: {
+          const text = wrapped(entry, col);
+          return text !== undefined
+            ? `<span class="shrink-0 overflow-hidden leading-4 text-slate-600 dark:text-slate-300" ${w(col)} title="${esc(col)}">${esc(text)}</span>`
+            : `<span class="shrink-0 truncate text-slate-600 dark:text-slate-300" ${w(col)} title="${esc(col)}">${esc(clip(columnText(entry, col)))}</span>`;
+        }
+      }
+    };
+    let html = '';
     if (entry.notice) {
+      // Notice : heure (et source) seulement, puis son texte.
+      for (const col of fixedColumns) if (col === '@time' || col === '@source') html += cell(col);
       const repeat = entry.repeat ?? 1;
       const badge =
         repeat > 1
@@ -583,22 +640,7 @@
         html += `<span class="min-w-0 flex-1 truncate italic">— ${esc(entry.text)} —${badge}</span>`;
       }
     } else {
-      const level = entry.parsed.level;
-      html += `<span class="shrink-0 truncate font-semibold ${LEVEL_CLASS[level]}" ${w('@level')}>${level === 'unknown' ? '' : level.toUpperCase()}</span>`;
-      const meta = isAssembly ? undefined : entry.meta;
-      if (meta) {
-        html +=
-          `<span class="shrink-0 truncate text-right text-slate-400 tabular-nums" ${w('@part')}>${esc(String(meta.partition))}</span>` +
-          `<span class="shrink-0 truncate text-right text-slate-400 tabular-nums" ${w('@offset')} title="${esc(String(meta.offset))}">${esc(String(meta.offset))}</span>` +
-          `<span class="shrink-0 truncate text-violet-700 dark:text-violet-300" ${w('@key')} title="${esc(meta.key ?? '')}">${esc(meta.key ?? '')}</span>`;
-      }
-      for (const col of profile.columns) {
-        const cell = wrapped(entry, col);
-        html +=
-          cell !== undefined
-            ? `<span class="shrink-0 overflow-hidden leading-4 text-slate-600 dark:text-slate-300" ${w(col)} title="${esc(col)}">${esc(cell)}</span>`
-            : `<span class="shrink-0 truncate text-slate-600 dark:text-slate-300" ${w(col)} title="${esc(col)}">${esc(clip(columnText(entry, col)))}</span>`;
-      }
+      for (const col of fixedColumns) html += cell(col);
       html += `<span class="min-w-0 flex-1 ${messageCell !== undefined ? 'overflow-hidden leading-4' : 'truncate'}">`;
       for (const seg of segments(message, m)) html += seg.match ? `<span class="hl">${esc(seg.text)}</span>` : esc(seg.text);
       html += '</span>';
@@ -997,11 +1039,6 @@
         <option value="@line"></option>
         {#each profile.columns as col (col)}<option value={col}></option>{/each}
       </datalist>
-      <datalist id="filtre-champs">
-        <option value="@message"></option>
-        <option value="@line"></option>
-        {#each profile.columns as col (col)}<option value={col}></option>{/each}
-      </datalist>
       <div class="flex items-center gap-2">
         <button type="button" class="btn py-0.5" onclick={addRule}>+ Ajouter une règle</button>
         {#if rules.length}<button type="button" class="btn py-0.5" onclick={() => s.rules.set([])}>Tout effacer</button>{/if}
@@ -1055,30 +1092,85 @@
   <div class="flex min-h-0 flex-1">
     <div class="relative flex min-w-0 flex-1 flex-col">
       <div class="flex h-6 shrink-0 items-center gap-3 overflow-hidden border-b border-slate-200 bg-slate-50 px-3 font-mono text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-        {#snippet fixedHeader(col: string, label: string, title?: string)}
-          <span class="relative shrink-0 {col === '@part' || col === '@offset' ? 'text-right' : ''}" style:width="{widthOf(col)}px">
-            <span class="block truncate" {title}>{label}</span>
-            {@render resizer(col, label)}
-          </span>
-        {/snippet}
-        {@render fixedHeader('@time', 'heure')}
-        {#if isAssembly}{@render fixedHeader('@source', 'source')}{/if}
-        {@render fixedHeader('@level', 'niveau')}
-        {#if isTopic}
-          {@render fixedHeader('@part', 'part.', 'Partition')}
-          {@render fixedHeader('@offset', 'offset')}
-          {@render fixedHeader('@key', 'clé')}
-        {/if}
-        {#each profile.columns as col (col)}
-          <span class="group/col relative flex shrink-0 items-center gap-1" style:width="{widthOf(col)}px">
-            <span class="truncate" title={col}>{col}</span>
-            {@render wrapToggle(col, col)}
-            <button type="button" class="hidden text-slate-400 group-hover/col:inline hover:text-red-500" title={'Retirer la colonne ' + col} onclick={() => actions.toggleColumn(col)}>✕</button>
-            {@render resizer(col, col)}
+        {#each fixedColumns as col (col)}
+          <!-- Glisser l'en-tête sur un autre pour réordonner les colonnes. -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <span
+            class="group/col relative flex shrink-0 items-center gap-1 rounded-sm {col === '@part' || col === '@offset' ? 'justify-end' : ''} {dropTarget === col && draggedColumn !== col
+              ? 'outline-2 outline-sky-500'
+              : ''} {draggedColumn === col ? 'opacity-40' : ''}"
+            style:width="{widthOf(col)}px"
+            draggable="true"
+            ondragstart={(e) => {
+              // Redimensionnement en cours (poignée) : pas de déplacement.
+              if (drag) return e.preventDefault();
+              draggedColumn = col;
+              e.dataTransfer?.setData('text/plain', col);
+              if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+            }}
+            ondragover={(e) => {
+              if (!draggedColumn) return;
+              e.preventDefault();
+              dropTarget = col;
+            }}
+            ondragleave={() => dropTarget === col && (dropTarget = null)}
+            ondrop={(e) => {
+              e.preventDefault();
+              if (draggedColumn && draggedColumn !== col) placeColumn(draggedColumn, col);
+              draggedColumn = dropTarget = null;
+            }}
+            ondragend={() => (draggedColumn = dropTarget = null)}
+          >
+            <span class="cursor-grab truncate" title={(col in COLUMN_LABELS ? columnLabel(col) : col) + ' — glisser pour déplacer la colonne'}>{col === '@part' ? 'part.' : columnLabel(col)}</span>
+            {#if !(col in COLUMN_LABELS)}
+              {@render wrapToggle(col, col)}
+              <button type="button" class="hidden text-slate-400 group-hover/col:inline hover:text-red-500" title={'Retirer la colonne ' + col + ' du profil'} onclick={() => actions.toggleColumn(col)}>✕</button>
+            {/if}
+            {@render resizer(col, columnLabel(col))}
           </span>
         {/each}
-        <span class="group/col flex flex-1 items-center gap-1">message {@render wrapToggle(MESSAGE_COLUMN, 'message')}</span>
+        <span class="group/col flex min-w-0 flex-1 items-center gap-1">message {@render wrapToggle(MESSAGE_COLUMN, 'message')}</span>
+        <button
+          type="button"
+          class="shrink-0 rounded px-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          aria-haspopup="true"
+          aria-expanded={columnsMenu}
+          title="Colonnes : afficher, masquer, réordonner"
+          onclick={() => (columnsMenu = !columnsMenu)}>Colonnes ▾</button
+        >
       </div>
+
+      {#if columnsMenu}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div class="fixed inset-0 z-20" onclick={() => (columnsMenu = false)}></div>
+        <div
+          class="absolute top-6 right-2 z-30 w-72 rounded border border-slate-200 bg-white p-2 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900"
+          role="dialog"
+          aria-label="Colonnes"
+          tabindex="-1"
+          onkeydown={(e) => e.key === 'Escape' && (columnsMenu = false)}
+        >
+          <p class="mb-1.5 text-slate-500">Cocher pour afficher ; flèches ou glisser l'en-tête pour l'ordre (de gauche à droite).</p>
+          <ul class="flex flex-col gap-0.5">
+            {#each allColumns as col, i (col)}
+              <li class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800">
+                <input type="checkbox" checked={!layout.hidden.includes(col)} aria-label={'Afficher ' + columnLabel(col)} onchange={() => toggleHidden(col)} />
+                <span class="min-w-0 flex-1 truncate {col in COLUMN_LABELS ? '' : 'font-mono'}" title={col}>{columnLabel(col)}</span>
+                <button type="button" class="btn px-1 py-0" title="Vers la gauche" aria-label={'Déplacer ' + columnLabel(col) + ' vers la gauche'} disabled={i === 0} onclick={() => shiftColumn(col, -1)}>↑</button>
+                <button type="button" class="btn px-1 py-0" title="Vers la droite" aria-label={'Déplacer ' + columnLabel(col) + ' vers la droite'} disabled={i === allColumns.length - 1} onclick={() => shiftColumn(col, 1)}
+                  >↓</button
+                >
+              </li>
+            {/each}
+            <li class="flex items-center gap-1.5 px-1 py-0.5 text-slate-400"><input type="checkbox" checked disabled aria-label="message" /> message <span class="ml-auto">toujours en dernier</span></li>
+          </ul>
+          <div class="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2 dark:border-slate-800">
+            <button type="button" class="btn py-0.5" disabled={!layout.order.length && !layout.hidden.length} onclick={resetLayout}>Réinitialiser</button>
+            <span class="flex-1 text-slate-400">{isAssembly ? 'Pour cet onglet.' : 'Enregistré dans le profil.'}</span>
+            <button type="button" class="btn py-0.5" onclick={() => (columnsMenu = false)}>Fermer</button>
+          </div>
+        </div>
+      {/if}
 
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
       <div

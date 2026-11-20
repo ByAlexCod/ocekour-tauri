@@ -220,6 +220,9 @@ export const ProfileSchema = z.object({
   parseNested: z.boolean().optional(),
   /** Largeur des colonnes de la liste (px) : chemin de champ, ou `@time`, `@level`, `@source`, `@key`. */
   widths: z.record(z.string(), z.number().int().min(24).max(4000)).optional(),
+  /** Ordre des colonnes de la liste (le message reste à la fin) et colonnes masquées. */
+  order: z.array(z.string().min(1)).optional(),
+  hidden: z.array(z.string().min(1)).optional(),
 });
 
 /** Règle d'un filtre enregistré (modèle de l'encart Filtres, sans l'`id` propre à l'onglet). */

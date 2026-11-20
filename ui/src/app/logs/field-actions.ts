@@ -79,6 +79,11 @@ export class FieldActions {
     );
   }
 
+  /** Ordre et colonnes masquées de la liste. Enregistrés sans message. */
+  setLayout(order: string[], hidden: string[]) {
+    return this.edit({ op: 'setLayout', order, hidden });
+  }
+
   /** Largeur d'une colonne (px) ; `null` : largeur par défaut. Enregistrée sans message. */
   setWidth(path: string, width: number | null) {
     return this.edit({ op: 'setWidth', path, width });

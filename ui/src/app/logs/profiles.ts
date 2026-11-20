@@ -15,6 +15,9 @@ export interface ResolvedProfile {
   parseNested: boolean;
   /** Largeur des colonnes (px), par colonne : le premier profil qui la définit l'emporte. */
   widths: Record<string, number>;
+  /** Ordre des colonnes et colonnes masquées : ceux du premier profil qui les définit. */
+  order: string[];
+  hidden: string[];
 }
 
 /** Joker `*` : n'importe quel segment ; `**` : n'importe quoi, `/` compris. */
@@ -43,7 +46,11 @@ export function resolveProfile(profiles: readonly Profile[], key: string): Resol
     wrap: [],
     parseNested: false,
     widths: {},
+    order: [],
+    hidden: [],
   };
+  let order: string[] | undefined;
+  let hidden: string[] | undefined;
   let parseNested: boolean | undefined;
   for (const profile of profiles) {
     if (profile.match !== '*' && !globToRegExp(profile.match).test(key)) continue;
@@ -56,7 +63,11 @@ export function resolveProfile(profiles: readonly Profile[], key: string): Resol
     for (const w of profile.wrap ?? []) if (!resolved.wrap.includes(w)) resolved.wrap.push(w);
     parseNested ??= profile.parseNested;
     for (const [column, width] of Object.entries(profile.widths ?? {})) resolved.widths[column] ??= width;
+    if (profile.order?.length) order ??= profile.order;
+    if (profile.hidden?.length) hidden ??= profile.hidden;
   }
   resolved.parseNested = parseNested ?? false;
+  resolved.order = order ?? [];
+  resolved.hidden = hidden ?? [];
   return resolved;
 }

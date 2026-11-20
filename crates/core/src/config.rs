@@ -188,6 +188,9 @@ pub fn profile_schema() -> S {
         ("parseNested", z::boolean().optional()),
         // Largeur des colonnes de la liste (px), par chemin de champ ou colonne fixe (`@time`…).
         ("widths", z::record(z::int().min(MIN_COLUMN_WIDTH).max(MAX_COLUMN_WIDTH)).optional()),
+        // Ordre des colonnes de la liste (le message reste à la fin) et colonnes masquées.
+        ("order", z::array(z::string().min(1)).optional()),
+        ("hidden", z::array(z::string().min(1)).optional()),
     ])
 }
 
@@ -476,6 +479,12 @@ pub struct Profile {
     /// Largeur des colonnes (px) : chemin de champ, ou `@time`, `@level`, `@source`, `@key`.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub widths: std::collections::BTreeMap<String, u32>,
+    /// Ordre des colonnes (`@time`, `@level`, `@source`, `@part`, `@offset`, `@key`, chemins de champs).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
+    /// Colonnes masquées (mêmes noms).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

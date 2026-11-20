@@ -47,6 +47,21 @@ la liste ; la ligne s'agrandit en conséquence :
   `config.yaml`). Il est donc conservé d'un lancement à l'autre.
 - Au-delà de 200 lignes, la valeur est tronquée : le détail la montre en entier.
 
+## Afficher, masquer et réordonner les colonnes
+
+Le bouton **Colonnes ▾**, à droite de l'en-tête de la liste, liste toutes les colonnes (heure,
+niveau, source d'un assemblage, partition / offset / clé d'un topic, champs ajoutés au profil) :
+
+- **cocher / décocher** une colonne l'affiche ou la masque (une colonne du profil masquée y
+  reste : il suffit de la recocher ; ✕ dans son en-tête la retire du profil) ;
+- **↑ / ↓** la déplacent vers la gauche ou la droite ; on peut aussi **glisser un en-tête** sur
+  un autre ;
+- **Réinitialiser** revient à l'ordre par défaut, tout affiché.
+
+Le **message** reste toujours la dernière colonne. L'ordre et les colonnes masquées sont
+**enregistrés dans le profil** (`order` et `hidden` dans `config.yaml`) ; dans un assemblage,
+ils valent pour l'onglet ouvert.
+
 ## Largeur des colonnes
 
 **Glissez** le bord droit de l'en-tête d'une colonne (heure, niveau, source, colonnes du

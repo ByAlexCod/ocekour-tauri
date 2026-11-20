@@ -132,6 +132,14 @@ pub fn profile_edit_schema() -> S {
         ),
         ("setParseNested", z::object(vec![("op", z::literal(json!("setParseNested"))), ("value", z::boolean())])),
         (
+            "setLayout",
+            z::object(vec![
+                ("op", z::literal(json!("setLayout"))),
+                ("order", z::array(z::string().min(1))),
+                ("hidden", z::array(z::string().min(1))),
+            ]),
+        ),
+        (
             "setWidth",
             z::object(vec![
                 ("op", z::literal(json!("setWidth"))),
@@ -174,6 +182,13 @@ pub fn edit_profile(config: &ConfigStore, match_: &str, edit: &Value) -> anyhow:
             "toggleColumn" => toggle("columns", profile.map(|p| p.columns).unwrap_or_default()),
             "toggleWrap" => toggle("wrap", profile.map(|p| p.wrap).unwrap_or_default()),
             "setParseNested" => Ok(doc.set(&at(&["parseNested"]), &edit["value"])?),
+            "setLayout" => {
+                for key in ["order", "hidden"] {
+                    let list = edit[key].as_array().cloned().unwrap_or_default();
+                    if list.is_empty() { doc.delete(&at(&[key]))?; } else { doc.set(&at(&[key]), &Value::Array(list))?; }
+                }
+                Ok(())
+            }
             "setWidth" => {
                 let mut widths = profile.map(|p| p.widths).unwrap_or_default();
                 match edit["width"].as_u64() {
@@ -265,7 +280,10 @@ mod tests {
         edit_profile(&s, m, &json!({ "op": "toggleWrap", "path": "@message" })).unwrap();
         edit_profile(&s, m, &json!({ "op": "setWidth", "path": "traceId", "width": 260 })).unwrap();
         edit_profile(&s, m, &json!({ "op": "setWidth", "path": "@time", "width": 180 })).unwrap();
+        edit_profile(&s, m, &json!({ "op": "setLayout", "order": ["@level", "traceId", "@time"], "hidden": ["@time"] })).unwrap();
         let p = &s.config().profiles[0];
+        assert_eq!(p.order, vec!["@level", "traceId", "@time"]);
+        assert_eq!(p.hidden, vec!["@time"]);
         assert_eq!(p.widths.get("traceId"), Some(&260));
         assert_eq!(p.widths.get("@time"), Some(&180));
         assert_eq!(p.match_, m);
@@ -282,8 +300,9 @@ mod tests {
         edit_profile(&s, m, &json!({ "op": "setWidth", "path": "traceId", "width": null })).unwrap();
         assert_eq!(s.config().profiles[0].widths.len(), 1);
         edit_profile(&s, m, &json!({ "op": "setWidth", "path": "@time", "width": null })).unwrap();
+        edit_profile(&s, m, &json!({ "op": "setLayout", "order": [], "hidden": [] })).unwrap();
         let t = text(&s);
-        assert!(!t.contains("expand") && !t.contains("fields") && !t.contains("widths"), "{t}");
+        assert!(!t.contains("expand") && !t.contains("fields") && !t.contains("widths") && !t.contains("order") && !t.contains("hidden"), "{t}");
         assert!(edit_profile(&s, m, &json!({ "op": "setWidth", "path": "x", "width": 5 })).is_err(), "largeur trop petite refusée");
         assert!(edit_profile(&s, m, &json!({ "op": "inconnu" })).is_err());
     }

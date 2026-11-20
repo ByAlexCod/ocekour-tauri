@@ -82,7 +82,8 @@ export type ProfileEdit =
   | { op: 'toggleWrap'; path: string }
   | { op: 'setField'; role: 'time' | 'level' | 'message'; path: string | null }
   | { op: 'setParseNested'; value: boolean }
-  | { op: 'setWidth'; path: string; width: number | null };
+  | { op: 'setWidth'; path: string; width: number | null }
+  | { op: 'setLayout'; order: string[]; hidden: string[] };
 
 /** Erreur de config.yaml, positionnée si possible (lignes et colonnes à partir de 1). */
 export interface ConfigError {

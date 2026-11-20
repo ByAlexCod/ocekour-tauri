@@ -350,7 +350,7 @@ mod tests {
     }
 
     fn profile(m: &str, f: impl FnOnce(&mut Profile)) -> Profile {
-        let mut p = Profile { match_: m.into(), fields: Default::default(), columns: vec![], expand: vec![], wrap: vec![], widths: Default::default(), parse_nested: None };
+        let mut p = Profile { match_: m.into(), fields: Default::default(), columns: vec![], expand: vec![], wrap: vec![], widths: Default::default(), order: vec![], hidden: vec![], parse_nested: None };
         f(&mut p);
         p
     }

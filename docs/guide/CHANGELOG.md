@@ -20,6 +20,10 @@
   à la largeur de la colonne (le JSON reste indenté, puis coupé de même).
 - **Largeur des colonnes** réglable : glisser le bord de l'en-tête, double-clic pour revenir à
   la largeur par défaut ; enregistrée dans le profil (`widths`).
+- **Afficher / masquer et réordonner** les colonnes (heure, niveau, source, partition, offset,
+  clé, champs du profil) : menu **Colonnes ▾** (cases, flèches, Réinitialiser) ou glisser un
+  en-tête sur un autre ; enregistré dans le profil (`order`, `hidden`). Le message reste en
+  dernier.
 
 **Liens**
 

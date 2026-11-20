@@ -26,6 +26,7 @@ describe('profils', () => {
           fields: { message: 'msg' },
           wrap: ['@message'],
           widths: { traceId: 220 },
+          order: ['traceId', '@time'],
         }),
         profile('prod/*/*', {
           columns: ['traceId'],
@@ -33,6 +34,8 @@ describe('profils', () => {
           expand: ['stack_trace', 'sql'],
           wrap: ['@message', 'context'],
           widths: { traceId: 140, '@time': 180 },
+          order: ['@level'],
+          hidden: ['@level'],
         }),
         profile('recette/*/*', { columns: ['ignoré'] }),
         profile('*', { fields: { message: 'autre', level: 'sev' }, parseNested: false }),
@@ -48,6 +51,8 @@ describe('profils', () => {
       wrap: ['@message', 'context'],
       parseNested: true,
       widths: { traceId: 220, '@time': 180 },
+      order: ['traceId', '@time'],
+      hidden: ['@level'],
     });
   });
 
