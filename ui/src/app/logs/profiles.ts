@@ -13,6 +13,8 @@ export interface ResolvedProfile {
   /** Colonnes dont le JSON s'affiche indenté dans la liste (`@message` : colonne message). */
   wrap: string[];
   parseNested: boolean;
+  /** Largeur des colonnes (px), par colonne : le premier profil qui la définit l'emporte. */
+  widths: Record<string, number>;
 }
 
 /** Joker `*` : n'importe quel segment ; `**` : n'importe quoi, `/` compris. */
@@ -40,6 +42,7 @@ export function resolveProfile(profiles: readonly Profile[], key: string): Resol
     expand: [],
     wrap: [],
     parseNested: false,
+    widths: {},
   };
   let parseNested: boolean | undefined;
   for (const profile of profiles) {
@@ -52,6 +55,7 @@ export function resolveProfile(profiles: readonly Profile[], key: string): Resol
     for (const e of profile.expand) if (!resolved.expand.includes(e)) resolved.expand.push(e);
     for (const w of profile.wrap ?? []) if (!resolved.wrap.includes(w)) resolved.wrap.push(w);
     parseNested ??= profile.parseNested;
+    for (const [column, width] of Object.entries(profile.widths ?? {})) resolved.widths[column] ??= width;
   }
   resolved.parseNested = parseNested ?? false;
   return resolved;

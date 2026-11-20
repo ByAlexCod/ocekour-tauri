@@ -218,6 +218,8 @@ export const ProfileSchema = z.object({
    */
   wrap: z.array(z.string()).default([]),
   parseNested: z.boolean().optional(),
+  /** Largeur des colonnes de la liste (px) : chemin de champ, ou `@time`, `@level`, `@source`, `@key`. */
+  widths: z.record(z.string(), z.number().int().min(24).max(4000)).optional(),
 });
 
 /** Règle d'un filtre enregistré (modèle de l'encart Filtres, sans l'`id` propre à l'onglet). */

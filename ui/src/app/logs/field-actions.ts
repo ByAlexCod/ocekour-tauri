@@ -58,14 +58,14 @@ export class FieldActions {
     return !!this.profile()?.wrap.includes(path);
   }
 
-  /** JSON de la colonne indenté (plusieurs lignes) ou sur une ligne ; `@message` : message. */
+  /** Colonne sur plusieurs lignes (texte coupé à sa largeur, JSON indenté) ou sur une ligne ; `@message` : message. */
   toggleWrap(path: string) {
     const name = path === '@message' ? 'message' : path;
     return this.edit(
       { op: 'toggleWrap', path },
       this.isWrapped(path)
-        ? `Colonne « ${name} » : JSON sur une ligne`
-        : `Colonne « ${name} » : JSON indenté`,
+        ? `Colonne « ${name} » : une ligne par log`
+        : `Colonne « ${name} » : à la ligne`,
     );
   }
 
@@ -79,6 +79,11 @@ export class FieldActions {
     );
   }
 
+  /** Largeur d'une colonne (px) ; `null` : largeur par défaut. Enregistrée sans message. */
+  setWidth(path: string, width: number | null) {
+    return this.edit({ op: 'setWidth', path, width });
+  }
+
   setParseNested(value: boolean) {
     return this.edit(
       { op: 'setParseNested', value },
@@ -86,14 +91,14 @@ export class FieldActions {
     );
   }
 
-  private async edit(edit: ProfileEdit, done: string) {
+  private async edit(edit: ProfileEdit, done?: string) {
     const key = this.profile()?.key;
     const api = configService.api;
     if (!key || !api) return;
     try {
       await api.editProfile(key, edit);
       analytics.event({ category: 'Profil', action: edit.op });
-      notifications.info(`${done} pour ${key}`);
+      if (done) notifications.info(`${done} pour ${key}`);
     } catch (e) {
       notifications.error(e);
     }

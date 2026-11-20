@@ -12,7 +12,7 @@
   import { exportContent, exportFileName } from './export';
   import { FieldActions, provideFieldActions } from './field-actions';
   import { buildMatcher, type Matcher, type SearchOptions, segments } from './filter';
-  import { MESSAGE_COLUMN, wrappedValue } from './json-cell';
+  import { MESSAGE_COLUMN, wrappedCell } from './json-cell';
   import type { LogEntry } from './log-buffer';
   import { compileRules, describeRule, type LogFilterRule, newRule, ruleError } from './log-filters';
   import { ROW_HEIGHT, type LogSession } from './log-session';
@@ -103,12 +103,80 @@
   /** Lignes par niveau : tenues à jour par le tampon, lues une fois par image. */
   const levelCounts = $derived(at(frame, { ...s.buffer.levelCounts } as Record<Level, number>));
 
-  // --- Colonnes JSON indentées (profil : `wrap`) ---------------------------------------------
+  // --- Largeur des colonnes (profil : `widths`) ------------------------------------------------
+  /** Colonnes fixes de la liste, dans l'ordre ; le message prend la place restante. */
+  const DEFAULT_WIDTHS: Record<string, number> = { '@time': 96, '@source': 112, '@level': 44, '@part': 32, '@offset': 64, '@key': 112 };
+  const MIN_WIDTH = 24;
+  const MAX_WIDTH = 4000;
+  /** Marge horizontale d'une ligne (px-3) et écart entre colonnes (gap-3). */
+  const ROW_PADDING = 24;
+  const COLUMN_GAP = 12;
+  const fixedColumns = $derived(['@time', ...(isAssembly ? ['@source'] : []), '@level', ...(isTopic ? ['@part', '@offset', '@key'] : []), ...profile.columns]);
+  /** Colonne en cours de redimensionnement (aperçu pendant le glissement). */
+  let drag = $state<{ col: string; px: number } | null>(null);
+  /** Largeurs posées dans cette vue : appliquées tout de suite (et seules, pour un assemblage, sans profil). */
+  let localWidths = $state<Record<string, number>>({});
+  const savedWidth = (col: string) => localWidths[col] ?? profile.widths[col] ?? DEFAULT_WIDTHS[col] ?? (isWrapColumn(col) ? 384 : 144);
+  const widthOf = (col: string) => (drag?.col === col ? drag.px : savedWidth(col));
+  const clampWidth = (px: number) => Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, px)));
+
+  /** Largeur utile de la liste et d'un caractère (police à chasse fixe) : découpe des cellules. */
+  let viewportWidth = $state(0);
+  let charWidth = $state(7.2);
+  const messageWidth = $derived(viewportWidth - ROW_PADDING - fixedColumns.reduce((sum, col) => sum + savedWidth(col) + COLUMN_GAP, 0));
+  /** Caractères par ligne d'une colonne « à la ligne ». */
+  const charsOf = (col: string) => Math.max(8, Math.floor((col === MESSAGE_COLUMN ? messageWidth : savedWidth(col)) / charWidth));
+
+  function startColumnResize(event: PointerEvent, col: string) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.currentTarget as HTMLElement;
+    const startX = event.clientX;
+    const start = savedWidth(col);
+    handle.setPointerCapture(event.pointerId);
+    drag = { col, px: start };
+    const move = (e: PointerEvent) => (drag = { col, px: clampWidth(start + e.clientX - startX) });
+    const end = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      const px = drag?.px ?? start;
+      if (px !== start) commitWidth(col, px);
+      drag = null;
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
+  /** Largeur retenue : tout de suite dans la vue, et enregistrée dans le profil du workload. */
+  function commitWidth(col: string, px: number | null) {
+    const next = { ...localWidths };
+    if (px === null) delete next[col];
+    else next[col] = px;
+    localWidths = next;
+    if (!isAssembly && profile.key) void actions.setWidth(col, px);
+  }
+
+  function resetWidth(col: string) {
+    if (!isAssembly && profile.key) {
+      // Largeur par défaut du profil : on oublie aussi celle de la vue.
+      const next = { ...localWidths };
+      delete next[col];
+      localWidths = next;
+      void actions.setWidth(col, null);
+    } else {
+      commitWidth(col, null);
+    }
+  }
+
+  // --- Colonnes « à la ligne » (profil : `wrap`) : JSON indenté, texte coupé à la largeur ----
   const wrapColumns = $derived.by(() => {
     const shown = new Set([...profile.columns, MESSAGE_COLUMN]);
     return profile.wrap.filter((column) => shown.has(column));
   });
-  const wrapKey = $derived(JSON.stringify([wrapColumns, profile.fields]));
+  const wrapKey = $derived(JSON.stringify([wrapColumns, profile.fields, wrapColumns.map(charsOf)]));
   let cellCache = new WeakMap<LogEntry, { key: string; cells: Map<string, string | undefined>; lines: number }>();
 
   function cells(entry: LogEntry) {
@@ -116,7 +184,7 @@
     let cached = cellCache.get(entry);
     if (!cached || cached.key !== key) {
       const fields = profile.fields;
-      const map = new Map(wrapColumns.map((c) => [c, wrappedValue(entry, c, fields)] as const));
+      const map = new Map(wrapColumns.map((c) => [c, wrappedCell(entry, c, fields, charsOf(c))] as const));
       let lines = 1;
       for (const text of map.values()) if (text) lines = Math.max(lines, text.split('\n').length);
       cached = { key, cells: map, lines };
@@ -125,7 +193,7 @@
     return cached;
   }
 
-  /** JSON indenté de la cellule, ou `undefined` (colonne non dépliée, valeur non JSON). */
+  /** Cellule « à la ligne » (JSON indenté ou texte coupé), ou `undefined` (colonne non concernée, vide). */
   const wrapped = (entry: LogEntry, column: string) => (wrapColumns.includes(column) ? cells(entry).cells.get(column) : undefined);
   const isWrapColumn = (column: string) => profile.wrap.includes(column);
 
@@ -247,6 +315,13 @@
     const observer = new ResizeObserver(() => (viewportHeight = el.clientHeight));
     observer.observe(el);
     viewportHeight = el.clientHeight;
+    // Largeur d'un caractère de la liste (police à chasse fixe) : découpe des cellules.
+    const probe = document.createElement('span');
+    probe.textContent = 'x'.repeat(100);
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre';
+    el.appendChild(probe);
+    charWidth = probe.getBoundingClientRect().width / 100 || 7.2;
+    probe.remove();
     // Retour sur un onglet : on retrouve la position de lecture.
     if (!s.stickToBottom()) void tick().then(() => (el.scrollTop = s.scrollTop));
     return () => observer.disconnect();
@@ -471,7 +546,7 @@
     expanded?: boolean;
   }
   const viewCache = new WeakMap<LogEntry, RowView>();
-  const viewKey = $derived(JSON.stringify([s.search(), s.searchMode(), profile.columns, wrapKey]));
+  const viewKey = $derived(JSON.stringify([s.search(), s.searchMode(), profile.columns, wrapKey, fixedColumns.map(widthOf)]));
 
   function row(entry: LogEntry): RowView {
     const key = viewKey;
@@ -480,16 +555,17 @@
     if (view?.key === key && view.repeat === entry.repeat && view.expanded === expanded) return view;
     const m = matcher;
     const highlight = s.searchMode() === 'highlight';
-    const messageJson = entry.notice ? undefined : wrapped(entry, MESSAGE_COLUMN);
-    const message = messageJson ?? clip(entry.parsed.message);
+    const messageCell = entry.notice ? undefined : wrapped(entry, MESSAGE_COLUMN);
+    const message = messageCell ?? clip(entry.parsed.message);
+    const w = (col: string) => `style="width:${widthOf(col)}px"`;
     // Contenu de la ligne en un seul fragment HTML (textes échappés) : bien plus rapide à
     // afficher que de nombreux petits éléments par ligne pendant le défilement.
-    let html = `<span class="w-24 shrink-0 text-slate-400 tabular-nums" title="${esc(fullDate(entry))}">${esc(formatTime(entry))}</span>`;
+    let html = `<span class="shrink-0 truncate text-slate-400 tabular-nums" ${w('@time')} title="${esc(fullDate(entry))}">${esc(formatTime(entry))}</span>`;
     if (isAssembly && entry.source) {
       const src = entry.source;
-      html += `<span class="w-28 shrink-0 truncate font-semibold" style="color:${esc(src.color)}" title="${esc(src.label)}">${esc(src.label)}</span>`;
+      html += `<span class="shrink-0 truncate font-semibold" style="width:${widthOf('@source')}px;color:${esc(src.color)}" title="${esc(src.label)}">${esc(src.label)}</span>`;
     } else if (isAssembly) {
-      html += `<span class="w-28 shrink-0"></span>`;
+      html += `<span class="shrink-0" ${w('@source')}></span>`;
     }
     if (entry.notice) {
       const repeat = entry.repeat ?? 1;
@@ -508,22 +584,22 @@
       }
     } else {
       const level = entry.parsed.level;
-      html += `<span class="w-11 shrink-0 font-semibold ${LEVEL_CLASS[level]}">${level === 'unknown' ? '' : level.toUpperCase()}</span>`;
+      html += `<span class="shrink-0 truncate font-semibold ${LEVEL_CLASS[level]}" ${w('@level')}>${level === 'unknown' ? '' : level.toUpperCase()}</span>`;
       const meta = isAssembly ? undefined : entry.meta;
       if (meta) {
         html +=
-          `<span class="w-8 shrink-0 text-right text-slate-400 tabular-nums">${esc(String(meta.partition))}</span>` +
-          `<span class="w-16 shrink-0 truncate text-right text-slate-400 tabular-nums" title="${esc(String(meta.offset))}">${esc(String(meta.offset))}</span>` +
-          `<span class="w-28 shrink-0 truncate text-violet-700 dark:text-violet-300" title="${esc(meta.key ?? '')}">${esc(meta.key ?? '')}</span>`;
+          `<span class="shrink-0 truncate text-right text-slate-400 tabular-nums" ${w('@part')}>${esc(String(meta.partition))}</span>` +
+          `<span class="shrink-0 truncate text-right text-slate-400 tabular-nums" ${w('@offset')} title="${esc(String(meta.offset))}">${esc(String(meta.offset))}</span>` +
+          `<span class="shrink-0 truncate text-violet-700 dark:text-violet-300" ${w('@key')} title="${esc(meta.key ?? '')}">${esc(meta.key ?? '')}</span>`;
       }
       for (const col of profile.columns) {
-        const json = wrapped(entry, col);
+        const cell = wrapped(entry, col);
         html +=
-          json !== undefined
-            ? `<span class="w-96 shrink-0 overflow-hidden leading-4 text-slate-600 dark:text-slate-300" title="${esc(col)}">${esc(json)}</span>`
-            : `<span class="${isWrapColumn(col) ? 'w-96' : 'w-36'} shrink-0 truncate text-slate-600 dark:text-slate-300" title="${esc(col)}">${esc(clip(columnText(entry, col)))}</span>`;
+          cell !== undefined
+            ? `<span class="shrink-0 overflow-hidden leading-4 text-slate-600 dark:text-slate-300" ${w(col)} title="${esc(col)}">${esc(cell)}</span>`
+            : `<span class="shrink-0 truncate text-slate-600 dark:text-slate-300" ${w(col)} title="${esc(col)}">${esc(clip(columnText(entry, col)))}</span>`;
       }
-      html += `<span class="min-w-0 flex-1 ${messageJson !== undefined ? 'overflow-hidden leading-4' : 'truncate'}">`;
+      html += `<span class="min-w-0 flex-1 ${messageCell !== undefined ? 'overflow-hidden leading-4' : 'truncate'}">`;
       for (const seg of segments(message, m)) html += seg.match ? `<span class="hl">${esc(seg.text)}</span>` : esc(seg.text);
       html += '</span>';
     }
@@ -672,10 +748,23 @@
       ? 'bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300'
       : 'text-slate-300 hover:text-sky-600 dark:text-slate-600 dark:hover:text-sky-400'}"
     aria-pressed={isWrapColumn(col)}
-    aria-label={'JSON indenté dans la colonne ' + label}
-    title={isWrapColumn(col) ? 'JSON indenté : cliquer pour l’afficher sur une ligne' : 'Afficher le JSON de cette colonne indenté, sur plusieurs lignes (enregistré dans le profil)'}
-    onclick={() => actions.toggleWrap(col)}>{'{}'}</button
+    aria-label={'À la ligne dans la colonne ' + label}
+    title={isWrapColumn(col)
+      ? 'À la ligne : cliquer pour revenir à une ligne par log'
+      : 'Afficher la colonne sur plusieurs lignes : texte coupé à la largeur de la colonne, JSON indenté (enregistré dans le profil)'}
+    onclick={() => actions.toggleWrap(col)}>↵</button
   >
+{/snippet}
+
+{#snippet resizer(col: string, label: string)}
+  <!-- Poignée de largeur, dans l'écart à droite de la colonne. -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <span
+    class="absolute top-0 -right-[9px] z-10 h-full w-[6px] cursor-col-resize rounded hover:bg-sky-400/60 {drag?.col === col ? 'bg-sky-500/70' : ''}"
+    title={'Largeur de « ' + label + ' » : glisser ; double-clic : largeur par défaut'}
+    onpointerdown={(e) => startColumnResize(e, col)}
+    ondblclick={() => resetWidth(col)}
+  ></span>
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
@@ -966,26 +1055,42 @@
   <div class="flex min-h-0 flex-1">
     <div class="relative flex min-w-0 flex-1 flex-col">
       <div class="flex h-6 shrink-0 items-center gap-3 overflow-hidden border-b border-slate-200 bg-slate-50 px-3 font-mono text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-        <span class="w-24 shrink-0">heure</span>
-        {#if isAssembly}<span class="w-28 shrink-0">source</span>{/if}
-        <span class="w-11 shrink-0">niveau</span>
+        {#snippet fixedHeader(col: string, label: string, title?: string)}
+          <span class="relative shrink-0 {col === '@part' || col === '@offset' ? 'text-right' : ''}" style:width="{widthOf(col)}px">
+            <span class="block truncate" {title}>{label}</span>
+            {@render resizer(col, label)}
+          </span>
+        {/snippet}
+        {@render fixedHeader('@time', 'heure')}
+        {#if isAssembly}{@render fixedHeader('@source', 'source')}{/if}
+        {@render fixedHeader('@level', 'niveau')}
         {#if isTopic}
-          <span class="w-8 shrink-0 text-right" title="Partition">part.</span>
-          <span class="w-16 shrink-0 text-right">offset</span>
-          <span class="w-28 shrink-0">clé</span>
+          {@render fixedHeader('@part', 'part.', 'Partition')}
+          {@render fixedHeader('@offset', 'offset')}
+          {@render fixedHeader('@key', 'clé')}
         {/if}
         {#each profile.columns as col (col)}
-          <span class="group/col flex shrink-0 items-center gap-1 truncate {isWrapColumn(col) ? 'w-96' : 'w-36'}">
+          <span class="group/col relative flex shrink-0 items-center gap-1" style:width="{widthOf(col)}px">
             <span class="truncate" title={col}>{col}</span>
             {@render wrapToggle(col, col)}
             <button type="button" class="hidden text-slate-400 group-hover/col:inline hover:text-red-500" title={'Retirer la colonne ' + col} onclick={() => actions.toggleColumn(col)}>✕</button>
+            {@render resizer(col, col)}
           </span>
         {/each}
         <span class="group/col flex flex-1 items-center gap-1">message {@render wrapToggle(MESSAGE_COLUMN, 'message')}</span>
       </div>
 
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-      <div bind:this={viewport} tabindex="0" role="log" aria-label="Lignes de log" class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto font-mono text-xs focus-visible:outline-none" onscroll={onScroll} onkeydown={onKey}>
+      <div
+        bind:this={viewport}
+        bind:clientWidth={viewportWidth}
+        tabindex="0"
+        role="log"
+        aria-label="Lignes de log"
+        class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto font-mono text-xs [scrollbar-gutter:stable] focus-visible:outline-none"
+        onscroll={onScroll}
+        onkeydown={onKey}
+      >
         <div class="relative w-full" style:height="{total}px">
           <div class="absolute inset-x-0 top-0" style:transform="translateY({offset}px)">
             {#each visible as item (item.entry.seq)}

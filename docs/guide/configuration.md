@@ -120,7 +120,8 @@ profiles:
       message: message
     columns: [traceId, http.status] # colonnes de la liste
     expand: [error.stack, sql] # champs dépliés en tête du détail
-    wrap: ['@message', http.body] # JSON indenté dans ces colonnes (@message : colonne message)
+    wrap: ['@message', http.body] # à la ligne : texte coupé, JSON indenté (@message : colonne message)
+    widths: { '@time': 160, traceId: 260 } # largeur des colonnes (px) ; @time, @level, @source, @key
     parseNested: true # JSON imbriqué dans des chaînes
 
   # Un topic Kafka : kafka/<nom de la connexion>/<topic>
@@ -138,8 +139,8 @@ profiles:
 
 **Tous** les profils qui correspondent s'appliquent, dans l'ordre du fichier :
 
-- pour `fields` et `parseNested`, le **premier** qui les définit l'emporte : placez donc les
-  profils précis avant les profils génériques ;
+- pour `fields`, `parseNested` et chaque largeur de `widths`, le **premier** qui les définit
+  l'emporte : placez donc les profils précis avant les profils génériques ;
 - `columns`, `expand` et `wrap` se **cumulent**.
 
 Les chemins de champs utilisent le point (`error.stack`, `http.status`).

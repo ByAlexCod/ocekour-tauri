@@ -35,6 +35,18 @@
   active / désactive une règle) ; déplié, il occupe au plus un tiers de la hauteur. État mémorisé ;
   charger un filtre enregistré ne le déplie plus.
 
+**Colonnes**
+
+- **À la ligne** (bouton ↵ de l'en-tête) aussi pour les logs **non JSON** : le texte est coupé
+  à la largeur de la colonne (le JSON reste indenté, puis coupé de même).
+- **Largeur des colonnes** réglable : glisser le bord de l'en-tête, double-clic pour revenir à
+  la largeur par défaut ; enregistrée dans le profil (`widths`).
+
+**Liens**
+
+- Windows : les boutons **Créer un jeton** (Comptes) et les autres liens s'ouvrent dans le
+  navigateur ; un lien avec des paramètres ouvrait l'Explorateur de fichiers.
+
 **Statistiques (suivi obligatoire)**
 
 - Réseau d'entreprise qui impose un proxy : si l'envoi direct au serveur de statistiques

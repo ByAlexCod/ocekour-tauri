@@ -186,8 +186,14 @@ pub fn profile_schema() -> S {
         ("expand", z::array(z::string()).default(json!([]))),
         ("wrap", z::array(z::string()).default(json!([]))),
         ("parseNested", z::boolean().optional()),
+        // Largeur des colonnes de la liste (px), par chemin de champ ou colonne fixe (`@time`…).
+        ("widths", z::record(z::int().min(MIN_COLUMN_WIDTH).max(MAX_COLUMN_WIDTH)).optional()),
     ])
 }
+
+/// Bornes d'une largeur de colonne enregistrée (px).
+pub const MIN_COLUMN_WIDTH: i64 = 24;
+pub const MAX_COLUMN_WIDTH: i64 = 4000;
 
 pub fn stored_filter_rule_schema() -> S {
     z::object(vec![
@@ -467,6 +473,9 @@ pub struct Profile {
     pub wrap: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parse_nested: Option<bool>,
+    /// Largeur des colonnes (px) : chemin de champ, ou `@time`, `@level`, `@source`, `@key`.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub widths: std::collections::BTreeMap<String, u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

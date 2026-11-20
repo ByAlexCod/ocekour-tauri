@@ -52,8 +52,26 @@ impl Ui for NoUi {}
 
 /// Ouvre une URL ou un dossier avec l'application par défaut du système.
 pub fn open_with_system(target: &str) -> anyhow::Result<()> {
+    // Windows : ShellExecute, comme un double-clic. (`explorer <url>` ouvre l'Explorateur de
+    // fichiers au lieu du navigateur dès que le lien a des paramètres : `?name=…&scopes=…`.)
     #[cfg(windows)]
-    let mut cmd = { let mut c = std::process::Command::new("explorer"); c.arg(target); c };
+    {
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        let (verb, file) = (wide("open"), wide(target));
+        // SAFETY : chaînes terminées par 0, vivantes pendant l'appel ; pas de fenêtre parente.
+        let code = unsafe { ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) } as isize;
+        // Au-delà de 32 : réussi (convention de ShellExecute).
+        if code <= 32 { anyhow::bail!("Ouverture impossible ({target}) : erreur Windows {code}."); }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    open_unix(target)
+}
+
+#[cfg(not(windows))]
+fn open_unix(target: &str) -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
     let mut cmd = { let mut c = std::process::Command::new("open"); c.arg(target); c };
     #[cfg(all(unix, not(target_os = "macos")))]

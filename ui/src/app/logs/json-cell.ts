@@ -46,3 +46,54 @@ export function wrappedValue(
     '\n',
   );
 }
+
+/**
+ * Découpe un texte en lignes d'au plus `width` caractères (police à chasse fixe), en coupant de
+ * préférence après un espace ; les retours à la ligne du texte sont gardés, les tabulations
+ * remplacées par 4 espaces. Au-delà de `maxLines`, la suite est renvoyée au détail.
+ */
+export function wrapText(text: string, width: number, maxLines = MAX_WRAP_LINES): string {
+  const out: string[] = [];
+  const max = Math.max(1, Math.floor(width));
+  for (const source of text.replace(/\t/g, '    ').split(/\r?\n/)) {
+    let line = source;
+    while (line.length > max) {
+      const space = line.lastIndexOf(' ', max - 1);
+      const cut = space >= max / 2 ? space + 1 : max;
+      out.push(line.slice(0, cut));
+      line = line.slice(cut);
+      if (out.length >= maxLines) break;
+    }
+    if (out.length >= maxLines) break;
+    out.push(line);
+  }
+  if (out.length < maxLines) return out.join('\n');
+  // Coupé : signalé seulement s'il restait du texte.
+  const full = out.join('').replace(/\n/g, '').length < text.replace(/\t/g, '    ').replace(/\r?\n/g, '').length;
+  return full ? [...out.slice(0, maxLines), '… (suite : voir le détail)'].join('\n') : out.join('\n');
+}
+
+/**
+ * Cellule d'une colonne « à la ligne » (bouton `{}`), découpée à `width` caractères : JSON
+ * indenté si la valeur en est, sinon le texte lui-même (logs non JSON compris). `undefined` si
+ * la cellule est vide.
+ */
+export function wrappedCell(
+  entry: LogEntry,
+  column: string,
+  fields: FieldNames,
+  width: number,
+): string | undefined {
+  if (entry.notice) return undefined;
+  const json = wrappedValue(entry, column, fields);
+  if (json !== undefined) return wrapText(json, width);
+  let text: string;
+  if (column === MESSAGE_COLUMN) {
+    text = entry.parsed.message;
+  } else {
+    const value = entry.parsed.json ? getFieldDeep(entry.parsed.json, column) : undefined;
+    if (value === undefined || value === null) return undefined;
+    text = typeof value === 'string' ? value : JSON.stringify(value);
+  }
+  return text ? wrapText(text, width) : undefined;
+}

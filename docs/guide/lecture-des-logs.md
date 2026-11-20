@@ -32,18 +32,29 @@ La liste affiche **heure · niveau · message**. Survolez l'heure pour voir la d
 
 Chaque onglet garde ses propres filtres.
 
-## JSON indenté dans une colonne
+## Colonne à la ligne (texte coupé, JSON indenté)
 
-Quand une colonne contient du JSON (objet, tableau, ou texte qui en contient), le bouton
-**{}** de son en-tête l'affiche **indenté, sur plusieurs lignes**, directement dans la liste.
-La ligne s'agrandit en conséquence.
+Le bouton **↵** de l'en-tête d'une colonne l'affiche **sur plusieurs lignes**, directement dans
+la liste ; la ligne s'agrandit en conséquence :
+
+- un **texte** (logs non JSON compris) est **coupé à la largeur de la colonne**, de préférence
+  entre deux mots ; il se recoupe quand la colonne ou la fenêtre change de largeur ;
+- du **JSON** (objet, tableau, ou texte qui en contient) est **indenté**, puis coupé de même.
 
 - Il est disponible sur les colonnes ajoutées au profil et sur la colonne **message**. Pour
   un message Kafka JSON sans champ « message », c'est toute la valeur qui est indentée.
-- Le réglage est **enregistré dans le profil** du workload ou du topic (`wrap` dans
+- Le réglage est **enregistré dans le profil** du workload, du topic ou du fichier (`wrap` dans
   `config.yaml`). Il est donc conservé d'un lancement à l'autre.
-- Les valeurs qui ne sont pas du JSON restent sur une ligne. Au-delà de 200 lignes, la valeur
-  est tronquée : le détail la montre en entier.
+- Au-delà de 200 lignes, la valeur est tronquée : le détail la montre en entier.
+
+## Largeur des colonnes
+
+**Glissez** le bord droit de l'en-tête d'une colonne (heure, niveau, source, colonnes du
+profil, partition / offset / clé d'un topic) pour changer sa largeur ; **double-cliquez**-le pour
+revenir à la largeur par défaut. Le **message** prend toute la place restante.
+
+La largeur est **enregistrée dans le profil** (`widths` dans `config.yaml`), comme les colonnes
+affichées. Dans un assemblage, elle vaut pour l'onglet ouvert.
 
 ## Le détail d'une ligne
 

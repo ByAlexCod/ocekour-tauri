@@ -131,6 +131,15 @@ pub fn profile_edit_schema() -> S {
             ]),
         ),
         ("setParseNested", z::object(vec![("op", z::literal(json!("setParseNested"))), ("value", z::boolean())])),
+        (
+            "setWidth",
+            z::object(vec![
+                ("op", z::literal(json!("setWidth"))),
+                ("path", z::string().min(1)),
+                // null : largeur par défaut.
+                ("width", z::int().min(crate::config::MIN_COLUMN_WIDTH).max(crate::config::MAX_COLUMN_WIDTH).nullable()),
+            ]),
+        ),
     ])
 }
 
@@ -165,6 +174,15 @@ pub fn edit_profile(config: &ConfigStore, match_: &str, edit: &Value) -> anyhow:
             "toggleColumn" => toggle("columns", profile.map(|p| p.columns).unwrap_or_default()),
             "toggleWrap" => toggle("wrap", profile.map(|p| p.wrap).unwrap_or_default()),
             "setParseNested" => Ok(doc.set(&at(&["parseNested"]), &edit["value"])?),
+            "setWidth" => {
+                let mut widths = profile.map(|p| p.widths).unwrap_or_default();
+                match edit["width"].as_u64() {
+                    Some(w) => { widths.insert(path.clone(), w as u32); }
+                    None => { widths.remove(&path); }
+                }
+                if widths.is_empty() { doc.delete(&at(&["widths"]))?; } else { doc.set(&at(&["widths"]), &json!(widths))?; }
+                Ok(())
+            }
             _ => {
                 let role = edit["role"].as_str().unwrap();
                 if edit["path"].is_null() { doc.delete(&at(&["fields", role]))?; } else { doc.set(&at(&["fields", role]), &edit["path"])?; }
@@ -245,7 +263,11 @@ mod tests {
         edit_profile(&s, m, &json!({ "op": "setField", "role": "message", "path": "msg" })).unwrap();
         edit_profile(&s, m, &json!({ "op": "setParseNested", "value": true })).unwrap();
         edit_profile(&s, m, &json!({ "op": "toggleWrap", "path": "@message" })).unwrap();
+        edit_profile(&s, m, &json!({ "op": "setWidth", "path": "traceId", "width": 260 })).unwrap();
+        edit_profile(&s, m, &json!({ "op": "setWidth", "path": "@time", "width": 180 })).unwrap();
         let p = &s.config().profiles[0];
+        assert_eq!(p.widths.get("traceId"), Some(&260));
+        assert_eq!(p.widths.get("@time"), Some(&180));
         assert_eq!(p.match_, m);
         assert_eq!(p.expand, vec!["stack_trace"]);
         assert_eq!(p.columns, vec!["traceId"]);
@@ -257,8 +279,12 @@ mod tests {
         // Retours en arrière : clés retirées.
         edit_profile(&s, m, &json!({ "op": "toggleExpand", "path": "stack_trace" })).unwrap();
         edit_profile(&s, m, &json!({ "op": "setField", "role": "message", "path": null })).unwrap();
+        edit_profile(&s, m, &json!({ "op": "setWidth", "path": "traceId", "width": null })).unwrap();
+        assert_eq!(s.config().profiles[0].widths.len(), 1);
+        edit_profile(&s, m, &json!({ "op": "setWidth", "path": "@time", "width": null })).unwrap();
         let t = text(&s);
-        assert!(!t.contains("expand") && !t.contains("fields"), "{t}");
+        assert!(!t.contains("expand") && !t.contains("fields") && !t.contains("widths"), "{t}");
+        assert!(edit_profile(&s, m, &json!({ "op": "setWidth", "path": "x", "width": 5 })).is_err(), "largeur trop petite refusée");
         assert!(edit_profile(&s, m, &json!({ "op": "inconnu" })).is_err());
     }
 
