@@ -2,28 +2,7 @@
 
 [← Sommaire](README.md)
 
-## 2.2.0
-
-**Nouveau : sonde, les logs d'une machine distante** ([guide](sonde.md))
-
-- `ocekour-headless sonde` expose en lecture seule les fichiers de logs d'un serveur Windows ou
-  Linux (binaire Linux statique, sans dépendance) : HTTPS, jeton par sonde, certificat épinglé
-  côté poste, plusieurs postes en même temps, reprise après coupure.
-- Nouvelle connexion **Sonde** : sources dans l'arbre, onglets, assemblage, liens de partage,
-  outils MCP.
-- Service Windows ou unité systemd : `sonde service installer`.
-
-**Windows 10 sans WebView2**
-
-- Si WebView2 n'est pas utilisable, Ocekour s'affiche avec le navigateur Edge du poste, en
-  fenêtre dédiée (mode application) : rien à installer, aucun accès Internet nécessaire.
-  `--navigateur` force cet affichage.
-- Si la fenêtre WebView2 échoue malgré tout à s'ouvrir, Ocekour bascule de lui-même sur cet
-  affichage au lieu de se fermer sans rien dire ; toute erreur de démarrage est désormais
-  affichée dans une boîte de message (avec le chemin du journal).
-- Les fichiers passés en ligne de commande au premier lancement s'ouvrent désormais après la
-  saisie de la clé d'activation (ils étaient perdus).
-- L'exe s'appelle désormais `Ocekour.exe` (sans numéro de version).
+## 2.3.0
 
 **Filtres**
 
@@ -55,6 +34,29 @@
 - L'écran « serveur de statistiques injoignable » donne la cause exacte (DNS, pare-feu,
   certificat, réponse HTTP…), aussi écrite dans le journal.
 - Les envois portent un User-Agent (certains pare-feux refusent les requêtes sans).
+
+## 2.2.0
+
+**Nouveau : sonde, les logs d'une machine distante** ([guide](sonde.md))
+
+- `ocekour-headless sonde` expose en lecture seule les fichiers de logs d'un serveur Windows ou
+  Linux (binaire Linux statique, sans dépendance) : HTTPS, jeton par sonde, certificat épinglé
+  côté poste, plusieurs postes en même temps, reprise après coupure.
+- Nouvelle connexion **Sonde** : sources dans l'arbre, onglets, assemblage, liens de partage,
+  outils MCP.
+- Service Windows ou unité systemd : `sonde service installer`.
+
+**Windows 10 sans WebView2**
+
+- Si WebView2 n'est pas utilisable, Ocekour s'affiche avec le navigateur Edge du poste, en
+  fenêtre dédiée (mode application) : rien à installer, aucun accès Internet nécessaire.
+  `--navigateur` force cet affichage.
+- Si la fenêtre WebView2 échoue malgré tout à s'ouvrir, Ocekour bascule de lui-même sur cet
+  affichage au lieu de se fermer sans rien dire ; toute erreur de démarrage est désormais
+  affichée dans une boîte de message (avec le chemin du journal).
+- Les fichiers passés en ligne de commande au premier lancement s'ouvrent désormais après la
+  saisie de la clé d'activation (ils étaient perdus).
+- L'exe s'appelle désormais `Ocekour.exe` (sans numéro de version).
 
 **Téléchargement de l'historique (« Télécharger… ») corrigé**
 
