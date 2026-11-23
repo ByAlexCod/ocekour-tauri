@@ -34,6 +34,13 @@
   (`ORA-01017`, compte verrouillé, mot de passe expiré…) au lieu de *Server sent MARKER -
   authentication rejected*.
 
+**Lancement**
+
+- Une instance d'Ocekour restée bloquée pendant sa fermeture (sans fenêtre) ne peut plus
+  empêcher les lancements suivants : l'arrêt est borné à quelques secondes, et un nouveau
+  lancement met fin à une instance sans fenêtre. Le journal indique la version et le mode
+  d'affichage (WebView2 ou navigateur) à chaque démarrage.
+
 **Liens**
 
 - Windows : les boutons **Créer un jeton** (Comptes) et les autres liens s'ouvrent dans le

@@ -97,6 +97,13 @@ pub fn main() -> i32 {
     }
 
     ocekour_core::logging::init(&dir, cfg!(debug_assertions));
+    log::info!(
+        "Ocekour {VERSION} : démarrage ({})",
+        match &edge {
+            Some(browser) => format!("affichage par le navigateur {}", browser.display()),
+            None => "fenêtre WebView2".into(),
+        }
+    );
     install_panic_hook(&args, edge.is_none());
     // Le fil principal (boucle de la fenêtre) reste dans le contexte tokio : le cœur y lance
     // ses tâches (serveur MCP, notifications) depuis les rappels de Tauri.
@@ -200,6 +207,11 @@ fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>, context: tauri::Context<tauri
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
+            } else {
+                // Instance sans fenêtre (fermeture en cours ou bloquée) : elle s'arrête, pour que
+                // le lancement suivant ouvre bien Ocekour au lieu de lui passer la main sans rien afficher.
+                log::warn!("Second lancement alors que la fenêtre est fermée : arrêt de cette instance.");
+                std::process::exit(0);
             }
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -228,6 +240,12 @@ fn run_window(app: Arc<App>, ui: Arc<ui::TauriUi>, context: tauri::Context<tauri
             tauri::async_runtime::spawn(async move {
                 app.shutdown().await;
                 handle.exit(0);
+            });
+            // Filet de sécurité : la boucle de la fenêtre elle-même ne doit pas retenir le processus.
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                log::warn!("Fermeture : boucle de la fenêtre toujours active après 10 s, arrêt forcé.");
+                std::process::exit(0);
             });
         }
     });

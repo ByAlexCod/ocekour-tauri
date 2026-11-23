@@ -48,6 +48,12 @@ fenêtre WebView2 qui échoue, Ocekour se rouvre de lui-même dans le navigateur
 application). Le détail est dans `%APPDATA%\Ocekour\logs\main.log`. Pour forcer l'affichage
 dans Edge : `Ocekour.exe --navigateur`.
 
+**Ocekour ne se lance plus (aucune fenêtre, aucun message).**
+Une instance précédente est peut-être restée en mémoire : Gestionnaire des tâches → terminer
+les processus `Ocekour.exe` (et les fenêtres Edge d'Ocekour), puis relancer. Depuis la 2.3, une
+instance sans fenêtre s'arrête d'elle-même au lancement suivant. Sinon, envoyez la fin de
+`%APPDATA%\Ocekour\logs\main.log` : chaque démarrage y est noté.
+
 **Ocekour démarre lentement à chaque fois.**
 Depuis la 2.0, l'exe ne décompresse plus rien et démarre en moins d'une seconde. Si la
 fenêtre reste blanche, vérifiez que **Microsoft Edge WebView2** est installé (Paramètres

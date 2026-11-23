@@ -333,13 +333,20 @@ impl App {
     }
 
     /// Avant de quitter : dernier envoi des statistiques (2 s au plus), flux arrêtés.
+    /// Arrêt : 5 s au plus, quoi qu'il arrive (un processus resté bloqué à la fermeture, sans
+    /// fenêtre, empêcherait les lancements suivants : une seule instance est autorisée).
     pub async fn shutdown(&self) {
         self.mcp_http.stop();
         self.licence.stop();
-        self.web.dispose().await;
         self.notifier.stop();
         self.context.stop();
-        let _ = tokio::time::timeout(Duration::from_secs(2), self.analytics.stop()).await;
+        let slow = async {
+            let _ = tokio::time::timeout(Duration::from_secs(2), self.web.dispose()).await;
+            let _ = tokio::time::timeout(Duration::from_secs(2), self.analytics.stop()).await;
+        };
+        if tokio::time::timeout(Duration::from_secs(5), slow).await.is_err() {
+            log::warn!("Arrêt : délai dépassé, fermeture forcée.");
+        }
     }
 }
 
