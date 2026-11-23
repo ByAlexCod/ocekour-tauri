@@ -65,7 +65,10 @@ pub async fn call(app: &Arc<App>, caller: &Caller, channel: &str, args: Vec<Valu
         app.licence_loaded().await;
         if !app.licence.usable() { return Err("Ocekour n'est pas activé.".into()); }
     }
-    let result = dispatch(app, caller, channel, &args).await;
+    // Répartiteur sur le tas : son futur (tous les canaux) est gros, et celui de `call` est
+    // construit puis recopié sur la pile du fil principal par Tauri (1 Mo sous Windows) avant
+    // d'être confié à tokio. Ici, seul un pointeur y passe.
+    let result = Box::pin(dispatch(app, caller, channel, &args)).await;
     match &result {
         Ok(v) if v["ok"] == false && v["error"].is_object() => {
             log::warn!("[{channel}] {} : {}", v["error"]["code"].as_str().unwrap_or_default(), v["error"]["message"].as_str().unwrap_or_default());

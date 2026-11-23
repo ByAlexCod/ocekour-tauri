@@ -36,6 +36,9 @@
 
 **Lancement**
 
+- Windows : Ocekour se fermait sans message juste après son ouverture (débordement de la pile
+  du fil principal, limitée à 1 Mo sous Windows, au premier appel de l'interface). Corrigé à la
+  source, et pile portée à 8 Mo.
 - Une instance d'Ocekour restée bloquée pendant sa fermeture (sans fenêtre) ne peut plus
   empêcher les lancements suivants : l'arrêt est borné à quelques secondes, et un nouveau
   lancement met fin à une instance sans fenêtre. Le journal indique la version et le mode

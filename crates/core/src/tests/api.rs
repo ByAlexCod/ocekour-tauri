@@ -208,3 +208,15 @@ async fn notifications_publiees_a_l_interface() {
     }).await.unwrap();
     t.app.shutdown().await;
 }
+
+/// Le futur de `call` est construit sur la pile du fil principal (Tauri, 1 Mo sous Windows) :
+/// il doit rester petit, le répartiteur étant sur le tas.
+#[tokio::test(flavor = "multi_thread")]
+async fn futur_de_call_compact() {
+    let (t, _ui) = setup(true).await;
+    let caller = win();
+    let f = call(&t.app, &caller, "app:version", vec![]);
+    let size = std::mem::size_of_val(&f);
+    assert!(size < 2_048, "futur de call : {size} octets");
+    drop(f);
+}
