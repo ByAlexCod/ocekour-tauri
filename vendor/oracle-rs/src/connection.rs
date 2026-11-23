@@ -683,6 +683,31 @@ impl ConnectionInner {
     }
 }
 
+/// Error of a refused authentication, with the server's `ORA-xxxxx` message when it can be read:
+/// from `response` (error message), or, after a MARKER, from the packet sent after the reset.
+async fn auth_error(inner: &mut ConnectionInner, response: Option<&bytes::Bytes>, fallback: &str) -> Error {
+    let packet = match response {
+        Some(p) => Some(p.clone()),
+        None => inner.handle_marker_reset().await.ok(),
+    };
+    match packet.as_deref().and_then(ora_message) {
+        Some(message) if message.starts_with("ORA-01017") => Error::AuthenticationFailed(format!(
+            "{message} (wrong user or password; also given when the account only has a password verifier this client does not support)"
+        )),
+        Some(message) => Error::AuthenticationFailed(message),
+        None => Error::AuthenticationFailed(format!("{fallback} (the server gave no error details)")),
+    }
+}
+
+/// First `ORA-nnnnn: text` message of a packet, up to the end of its line.
+fn ora_message(packet: &[u8]) -> Option<String> {
+    let start = packet.windows(4).position(|w| w == b"ORA-")?;
+    let rest = &packet[start..];
+    let end = rest.iter().position(|&b| b == b'\n' || b == 0 || (b < 0x20 && b != b'\t')).unwrap_or(rest.len());
+    let text = String::from_utf8_lossy(&rest[..end]).trim().to_string();
+    (text.len() > 4).then_some(text)
+}
+
 /// An Oracle database connection.
 ///
 /// This is the main type for interacting with Oracle databases. It provides
@@ -1167,13 +1192,14 @@ impl Connection {
                 return Err(Error::Protocol("Empty auth response".to_string()));
             }
 
-            // Check for error message type
+            // Refused: MARKER (then the error after a reset), or an error message.
+            if response[4] == PacketType::Marker as u8 {
+                return Err(auth_error(&mut inner, None, "authentication phase one rejected").await);
+            }
             if response.len() > PACKET_HEADER_SIZE + 2 {
                 let msg_type = response[PACKET_HEADER_SIZE + 2];
                 if msg_type == MessageType::Error as u8 {
-                    return Err(Error::AuthenticationFailed(
-                        "Server rejected authentication phase one".to_string(),
-                    ));
+                    return Err(auth_error(&mut inner, Some(&response), "authentication phase one rejected").await);
                 }
             }
 
@@ -1192,17 +1218,16 @@ impl Connection {
                 return Err(Error::Protocol("Empty auth phase two response".to_string()));
             }
 
-            // Check for error message type or marker
+            // Refused: MARKER (then the error after a reset), or an error message.
             let packet_type = response[4];
-            if packet_type == 12 {
-                // Marker - authentication failed
-                return Err(Error::AuthenticationFailed("Server sent MARKER - authentication rejected".to_string()));
+            if packet_type == PacketType::Marker as u8 {
+                return Err(auth_error(&mut inner, None, "authentication rejected").await);
             }
 
             if response.len() > PACKET_HEADER_SIZE + 2 {
                 let msg_type = response[PACKET_HEADER_SIZE + 2];
                 if msg_type == MessageType::Error as u8 {
-                    return Err(Error::InvalidCredentials);
+                    return Err(auth_error(&mut inner, Some(&response), "authentication rejected").await);
                 }
             }
 
@@ -5383,6 +5408,13 @@ fn oracle_type_from_name(type_name: &str) -> crate::constants::OracleType {
 mod tests {
     use super::*;
     use crate::row::Value;
+
+    #[test]
+    fn test_ora_message() {
+        let packet = b"\x00\x00\x00\x00\x06\x00\x00\x00junkORA-01017: invalid username/password; logon denied\n\x00more";
+        assert_eq!(ora_message(packet).as_deref(), Some("ORA-01017: invalid username/password; logon denied"));
+        assert_eq!(ora_message(b"no error here"), None);
+    }
 
     #[test]
     fn test_query_options_default() {

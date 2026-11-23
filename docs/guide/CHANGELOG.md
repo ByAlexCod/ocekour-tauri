@@ -30,6 +30,9 @@
 - Oracle : les **redirections du listener** (serveur partagé, RAC / SCAN, Connection Manager,
   processus dédié sous Windows) sont suivies ; la connexion échouait sur *connection
   redirected to: redirect not implemented*.
+- Oracle : une connexion refusée à l'authentification affiche l'erreur exacte du serveur
+  (`ORA-01017`, compte verrouillé, mot de passe expiré…) au lieu de *Server sent MARKER -
+  authentication rejected*.
 
 **Liens**
 
