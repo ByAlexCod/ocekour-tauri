@@ -25,6 +25,12 @@
   en-tête sur un autre ; enregistré dans le profil (`order`, `hidden`). Le message reste en
   dernier.
 
+**Bases de données**
+
+- Oracle : les **redirections du listener** (serveur partagé, RAC / SCAN, Connection Manager,
+  processus dédié sous Windows) sont suivies ; la connexion échouait sur *connection
+  redirected to: redirect not implemented*.
+
 **Liens**
 
 - Windows : les boutons **Créer un jeton** (Comptes) et les autres liens s'ouvrent dans le

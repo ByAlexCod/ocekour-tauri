@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/core", "crates/headless", "src-tauri"]
+exclude = ["vendor"]
 
 [workspace.package]
 version = "2.3.0"
@@ -22,3 +23,8 @@ lto = "thin"
 codegen-units = 4
 strip = true
 panic = "unwind"
+
+# Pilote Oracle : copie de oracle-rs 0.1.7 qui suit les redirections du listener (REDIRECT :
+# dispatcher, RAC / SCAN, Connection Manager), absentes de la version publiée.
+[patch.crates-io]
+oracle-rs = { path = "vendor/oracle-rs" }

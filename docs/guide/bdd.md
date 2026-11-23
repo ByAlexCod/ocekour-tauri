@@ -48,3 +48,15 @@ Les outils n'apparaissent **que** si au moins une base est configurée et la lic
    `ALTER`, `TRUNCATE`, `GRANT`, `CALL`…) est **refusé**.
 3. La requête s'exécute dans une **transaction en lecture seule** côté serveur.
 4. Le résultat est **borné** (lignes et temps d'exécution).
+
+## Oracle : redirections du listener
+
+Le listener Oracle peut renvoyer le client vers une autre adresse : dispatcher de serveur
+partagé, nœud d'un RAC (listener SCAN), Connection Manager, ou processus dédié sous Windows.
+Depuis la 2.3.0, Ocekour **suit la redirection** (jusqu'à 4 de suite) avec la chaîne de
+connexion fournie par le listener ; avant, la connexion échouait sur *connection redirected to:
+redirect not implemented*.
+
+L'adresse de redirection doit être joignable depuis le poste (nom d'hôte résolu, port ouvert).
+Sinon, l'erreur indique l'adresse visée (`hôte:port`) : c'est elle qu'il faut ouvrir, ou
+demander au DBA de déclarer dans le listener une adresse joignable (`LOCAL_LISTENER`, SCAN).
