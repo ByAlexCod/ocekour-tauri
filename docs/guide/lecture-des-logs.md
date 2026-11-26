@@ -49,12 +49,16 @@ la liste ; la ligne s'agrandit en conséquence :
 
 ## Copier des lignes
 
+- **Copier tout**, dans la barre de l'onglet, copie dans le presse-papiers **toutes les lignes
+  chargées dans l'onglet**, quels que soient les filtres et la recherche.
 - **Cliquez** une ligne pour la sélectionner ; **Maj+clic** (ou **Maj+↑ / ↓**) étend la
-  sélection à une plage de lignes, surlignée en bleu clair.
+  sélection à une plage de lignes, surlignée en bleu clair ; **Ctrl+A** sélectionne toutes les
+  lignes affichées.
 - **Ctrl+C** copie les lignes sélectionnées dans le presse-papiers, telles qu'elles ont été
   reçues. Si du texte est surligné à la souris, Ctrl+C copie ce texte, comme d'habitude.
-- Le bouton **Copier ▾** propose aussi de copier **toutes les lignes affichées** (filtres
-  compris), en **texte** ou en **NDJSON** (même contenu que « Exporter… »).
+- Le menu **▾** à côté de « Copier tout » propose aussi : tout l'onglet en **NDJSON**, la
+  sélection, ou **les lignes affichées** (filtres compris), en **texte** ou en **NDJSON** (même
+  contenu que « Exporter… »).
 - Au-delà d'environ 5 Mo de texte, la copie est refusée : utilisez **Exporter…**.
 
 ## Afficher, masquer et réordonner les colonnes

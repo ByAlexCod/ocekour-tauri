@@ -6,9 +6,12 @@
 
 **Copier des logs dans le presse-papiers**
 
+- **Copier tout** (barre de l'onglet) : toutes les lignes chargées dans l'onglet, d'un clic,
+  quels que soient les filtres et la recherche.
 - **Ctrl+C** dans la liste copie la ligne sélectionnée ; **Maj+clic** ou **Maj+↑ / ↓**
   sélectionnent une plage de lignes (un texte surligné à la souris garde la copie habituelle).
-- Bouton **Copier ▾** : la sélection ou toutes les lignes affichées (filtres compris), en
+- **Ctrl+A** dans la liste sélectionne toutes les lignes affichées.
+- Menu **▾** à côté : tout l'onglet, la sélection ou les lignes affichées (filtres compris), en
   texte brut ou en NDJSON, comme « Exporter… ». Au-delà d'environ 5 Mo, utiliser
   « Exporter… ».
 

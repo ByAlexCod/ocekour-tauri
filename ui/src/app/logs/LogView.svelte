@@ -452,10 +452,17 @@
     return out;
   }
 
-  /** Copie la sélection ou les lignes affichées (filtres compris), en texte ou en NDJSON. */
-  async function copyLines(which: 'selection' | 'shown', format: ExportFormat) {
+  /** Lignes chargées dans l'onglet (tampon), filtres ignorés. */
+  const loadedCount = $derived(at(frame, s.buffer.length));
+
+  /**
+   * Copie : `all` = tout ce qui est chargé dans l'onglet (filtres ignorés), `shown` = lignes
+   * affichées (filtres compris), `selection` = sélection ; en texte ou en NDJSON.
+   */
+  async function copyLines(which: 'all' | 'selection' | 'shown', format: ExportFormat) {
     copyOpen = false;
-    const { text, lines } = copyContent(which === 'selection' ? selectedEntries() : rows.toArray(), format);
+    const source = which === 'all' ? s.buffer.entries : which === 'selection' ? selectedEntries() : rows.toArray();
+    const { text, lines } = copyContent(source, format);
     if (!lines) {
       notifications.error(which === 'selection' ? 'Aucune ligne sélectionnée : cliquez une ligne (Maj+clic pour une plage).' : 'Aucune ligne à copier.');
       return;
@@ -561,6 +568,20 @@
     if (event.key === 'Escape') {
       s.selectedSeq.set(null);
       anchorSeq = null;
+      return;
+    }
+    // Ctrl+A : toutes les lignes affichées (puis Ctrl+C pour les copier).
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a' && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      const first = rows.at(0);
+      const last = rows.at(rows.length - 1);
+      if (first && last) {
+        anchorSeq = first.seq;
+        s.selectedSeq.set(last.seq);
+        s.stickToBottom.set(false);
+        s.seqWhenUnstuck.set(s.buffer.total);
+      }
       return;
     }
     // Ctrl+C : lignes sélectionnées (un texte surligné à la souris garde la copie native).
@@ -913,20 +934,33 @@
     <button type="button" class="btn" onclick={clear}>Effacer</button>
     <button type="button" class="btn" title="Relancer le flux" onclick={() => s.start()}>⟳</button>
     <div class="relative">
-      <button
-        type="button"
-        class="btn"
-        aria-haspopup="true"
-        aria-expanded={copyOpen}
-        title="Copier des lignes dans le presse-papiers (Ctrl+C : lignes sélectionnées ; Maj+clic pour une plage)"
-        disabled={!rowCount}
-        onclick={() => (copyOpen = !copyOpen)}>Copier ▾</button
-      >
+      <div class="flex">
+        <button
+          type="button"
+          class="btn rounded-r-none"
+          title="Copier dans le presse-papiers toutes les lignes chargées dans l'onglet (filtres ignorés)"
+          disabled={!loadedCount}
+          onclick={() => copyLines('all', 'text')}>Copier tout</button
+        >
+        <button
+          type="button"
+          class="btn rounded-l-none border-l-0 px-1.5"
+          aria-haspopup="true"
+          aria-expanded={copyOpen}
+          aria-label="Autres copies"
+          title="Autres copies : NDJSON, lignes affichées (filtres compris), sélection (Ctrl+C ; Maj+clic pour une plage, Ctrl+A pour tout)"
+          disabled={!loadedCount}
+          onclick={() => (copyOpen = !copyOpen)}>▾</button
+        >
+      </div>
       {#if copyOpen}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div class="fixed inset-0 z-10" onclick={() => (copyOpen = false)}></div>
         <div class="absolute z-20 mt-1 flex min-w-72 flex-col rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
-          <span class="px-3 pt-1 text-xs text-slate-500">Sélection : {selectedCount ? `${selectedCount.toLocaleString('fr-FR')} ligne(s)` : 'aucune (cliquer une ligne, Maj+clic pour une plage)'}</span>
+          <span class="px-3 pt-1 text-xs text-slate-500">Tout l'onglet (filtres ignorés) : {loadedCount.toLocaleString('fr-FR')} ligne(s) chargée(s)</span>
+          <button type="button" class="px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => copyLines('all', 'text')}>Tout, texte</button>
+          <button type="button" class="px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => copyLines('all', 'ndjson')}>Tout, NDJSON</button>
+          <span class="mt-1 border-t border-slate-100 px-3 pt-1.5 text-xs text-slate-500 dark:border-slate-800">Sélection : {selectedCount ? `${selectedCount.toLocaleString('fr-FR')} ligne(s)` : 'aucune (cliquer une ligne, Maj+clic pour une plage)'}</span>
           <button type="button" class="px-3 py-1.5 text-left hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800" disabled={!selectedCount} onclick={() => copyLines('selection', 'text')}
             >Sélection, texte <span class="float-right text-xs text-slate-400">Ctrl+C</span></button
           >
