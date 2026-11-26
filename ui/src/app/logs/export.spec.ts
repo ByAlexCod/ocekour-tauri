@@ -1,4 +1,4 @@
-import { exportContent, exportFileName, exportLine } from './export';
+import { copyContent, exportContent, exportFileName, exportLine } from './export';
 import { LogBuffer } from './log-buffer';
 
 describe('export', () => {
@@ -54,5 +54,19 @@ describe('export', () => {
     expect(exportFileName('api/app: 1', new Date(2026, 8, 24, 9, 5))).toBe(
       'api_app_ 1-20260924-0905',
     );
+  });
+});
+
+describe('copie dans le presse-papiers', () => {
+  it('texte brut ou NDJSON, sans retour final, notices exclues', () => {
+    const buffer = new LogBuffer(10);
+    buffer.push([{ text: 'texte simple' }, { text: '{"level":"info","msg":"ok"}' }]);
+    buffer.notice('Reconnexion');
+    const entries = buffer.entries;
+    expect(copyContent(entries, 'text')).toEqual({ text: 'texte simple\n{"level":"info","msg":"ok"}', lines: 2 });
+    const nd = copyContent(entries, 'ndjson');
+    expect(nd.lines).toBe(2);
+    expect(nd.text.split('\n').map((l) => JSON.parse(l))[1]).toEqual({ level: 'info', msg: 'ok' });
+    expect(copyContent([], 'text')).toEqual({ text: '', lines: 0 });
   });
 });

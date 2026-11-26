@@ -58,3 +58,12 @@ export function exportFileName(name: string, now = new Date()): string {
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
   return `${name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')}-${stamp}`;
 }
+
+/** Au-delà, le presse-papiers est refusé (l'appel au cœur est borné) : « Exporter… » à la place. */
+export const COPY_LIMIT = 4_900_000;
+
+/** Texte copié dans le presse-papiers : comme l'export, sans retour à la ligne final. */
+export function copyContent(entries: readonly LogEntry[], format: ExportFormat): { text: string; lines: number } {
+  const kept = entries.filter((e) => !e.notice);
+  return { text: kept.map((e) => exportLine(e, format)).join('\n'), lines: kept.length };
+}

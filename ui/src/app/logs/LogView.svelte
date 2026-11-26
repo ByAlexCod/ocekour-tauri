@@ -9,7 +9,8 @@
   import { shareService as share } from '../share/share.service';
   import { AssemblySession } from './assembly-session';
   import LogDetail from './detail/LogDetail.svelte';
-  import { exportContent, exportFileName } from './export';
+  import { COPY_LIMIT, copyContent, type ExportFormat, exportContent, exportFileName } from './export';
+  import { copy } from '../core/clipboard';
   import { FieldActions, provideFieldActions } from './field-actions';
   import { buildMatcher, type Matcher, type SearchOptions, segments } from './filter';
   import { COLUMN_LABELS, columnLabel, moveColumn, orderColumns } from './columns';
@@ -436,6 +437,37 @@
     }
   }
 
+  // --- Copie dans le presse-papiers ---------------------------------------------------------------
+  let copyOpen = $state(false);
+
+  /** Lignes de la sélection (plage Maj+clic / Maj+flèches, ou la ligne sélectionnée). */
+  function selectedEntries(): LogEntry[] {
+    const range = selection;
+    if (!range) return [];
+    const out: LogEntry[] = [];
+    for (let i = range.from; i <= range.to; i++) {
+      const entry = rows.at(i);
+      if (entry) out.push(entry);
+    }
+    return out;
+  }
+
+  /** Copie la sélection ou les lignes affichées (filtres compris), en texte ou en NDJSON. */
+  async function copyLines(which: 'selection' | 'shown', format: ExportFormat) {
+    copyOpen = false;
+    const { text, lines } = copyContent(which === 'selection' ? selectedEntries() : rows.toArray(), format);
+    if (!lines) {
+      notifications.error(which === 'selection' ? 'Aucune ligne sélectionnée : cliquez une ligne (Maj+clic pour une plage).' : 'Aucune ligne à copier.');
+      return;
+    }
+    if (text.length > COPY_LIMIT) {
+      notifications.error(`${lines.toLocaleString('fr-FR')} lignes : trop volumineux pour le presse-papiers. Utilisez « Exporter… » ou réduisez la sélection.`);
+      return;
+    }
+    await copy(text, `${lines.toLocaleString('fr-FR')} ligne(s) copiée(s)${format === 'ndjson' ? ' (NDJSON)' : ''}`);
+    analytics.event({ category: 'Copie', action: format, name: which, value: lines });
+  }
+
   /** F3 / Maj+F3 : correspondance suivante / précédente (mode « surligner »). */
   function nextMatch(direction: 1 | -1) {
     const m = matcher;
@@ -474,9 +506,22 @@
     return seq === null ? undefined : rows.at(rows.indexOfSeq(seq));
   });
 
-  function select(index: number, center = false) {
+  /** Début de la plage sélectionnée (Maj+clic, Maj+flèches) ; la fin est la ligne sélectionnée. */
+  let anchorSeq = $state<number | null>(null);
+  const selection = $derived.by(() => {
+    void frame;
+    const end = rows.indexOfSeq(s.selectedSeq());
+    if (end < 0) return null;
+    const start = rows.indexOfSeq(anchorSeq);
+    return start < 0 ? { from: end, to: end } : { from: Math.min(start, end), to: Math.max(start, end) };
+  });
+  const selectedCount = $derived(selection ? selection.to - selection.from + 1 : 0);
+
+  /** `extend` : étend la plage depuis l'ancre (Maj) au lieu de la recommencer. */
+  function select(index: number, center = false, extend = false) {
     const entry = rows.at(index);
     if (!entry) return;
+    if (!extend || anchorSeq === null || rows.indexOfSeq(anchorSeq) < 0) anchorSeq = extend ? (s.selectedSeq() ?? entry.seq) : entry.seq;
     s.selectedSeq.set(entry.seq);
     s.stickToBottom.set(false);
     s.seqWhenUnstuck.set(s.buffer.total);
@@ -497,7 +542,8 @@
       }
       return;
     }
-    select(index);
+    if (event.shiftKey) window.getSelection()?.removeAllRanges();
+    select(index, false, event.shiftKey);
   }
 
   function onKey(event: KeyboardEvent) {
@@ -514,11 +560,20 @@
     };
     if (event.key === 'Escape') {
       s.selectedSeq.set(null);
+      anchorSeq = null;
+      return;
+    }
+    // Ctrl+C : lignes sélectionnées (un texte surligné à la souris garde la copie native).
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c' && !event.shiftKey && !event.altKey) {
+      if (window.getSelection()?.toString()) return;
+      if (!selection) return;
+      event.preventDefault();
+      void copyLines('selection', 'text');
       return;
     }
     if (!(event.key in moves)) return;
     event.preventDefault();
-    select(Math.min(Math.max(moves[event.key], 0), rows.length - 1));
+    select(Math.min(Math.max(moves[event.key], 0), rows.length - 1), false, event.shiftKey);
   }
 
   function ensureVisible(index: number, center = false) {
@@ -857,6 +912,31 @@
     {/if}
     <button type="button" class="btn" onclick={clear}>Effacer</button>
     <button type="button" class="btn" title="Relancer le flux" onclick={() => s.start()}>⟳</button>
+    <div class="relative">
+      <button
+        type="button"
+        class="btn"
+        aria-haspopup="true"
+        aria-expanded={copyOpen}
+        title="Copier des lignes dans le presse-papiers (Ctrl+C : lignes sélectionnées ; Maj+clic pour une plage)"
+        disabled={!rowCount}
+        onclick={() => (copyOpen = !copyOpen)}>Copier ▾</button
+      >
+      {#if copyOpen}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div class="fixed inset-0 z-10" onclick={() => (copyOpen = false)}></div>
+        <div class="absolute z-20 mt-1 flex min-w-72 flex-col rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <span class="px-3 pt-1 text-xs text-slate-500">Sélection : {selectedCount ? `${selectedCount.toLocaleString('fr-FR')} ligne(s)` : 'aucune (cliquer une ligne, Maj+clic pour une plage)'}</span>
+          <button type="button" class="px-3 py-1.5 text-left hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800" disabled={!selectedCount} onclick={() => copyLines('selection', 'text')}
+            >Sélection, texte <span class="float-right text-xs text-slate-400">Ctrl+C</span></button
+          >
+          <button type="button" class="px-3 py-1.5 text-left hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800" disabled={!selectedCount} onclick={() => copyLines('selection', 'ndjson')}>Sélection, NDJSON</button>
+          <span class="mt-1 border-t border-slate-100 px-3 pt-1.5 text-xs text-slate-500 dark:border-slate-800">Lignes affichées (filtres compris) : {rowCount.toLocaleString('fr-FR')}</span>
+          <button type="button" class="px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => copyLines('shown', 'text')}>Lignes affichées, texte</button>
+          <button type="button" class="px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => copyLines('shown', 'ndjson')}>Lignes affichées, NDJSON</button>
+        </div>
+      {/if}
+    </div>
     <button type="button" class="btn" title="Enregistrer les lignes affichées (filtres compris) en NDJSON ou en texte" disabled={!rowCount} onclick={exportLines}>Exporter…</button>
     <div class="relative">
       <button type="button" class="btn" title="Télécharger l'historique complet depuis la création du/des pod(s)" onclick={() => (dlOpen = !dlOpen)}>Télécharger…</button>
@@ -1189,7 +1269,11 @@
               {@const v = row(item.entry)}
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
               <div
-                class="flex cursor-default gap-3 px-3 whitespace-pre [contain:strict] {item.entry.seq === s.selectedSeq() ? 'bg-sky-100 dark:bg-sky-900/60' : v.cls}"
+                class="flex cursor-default gap-3 px-3 whitespace-pre [contain:strict] {item.entry.seq === s.selectedSeq()
+                  ? 'bg-sky-100 dark:bg-sky-900/60'
+                  : selection && item.index >= selection.from && item.index <= selection.to
+                    ? 'bg-sky-50 dark:bg-sky-950/70'
+                    : v.cls}"
                 class:items-center={item.height === ROW_HEIGHT}
                 class:items-start={item.height !== ROW_HEIGHT}
                 class:match-row={v.match}

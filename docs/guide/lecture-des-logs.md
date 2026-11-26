@@ -47,6 +47,16 @@ la liste ; la ligne s'agrandit en conséquence :
   `config.yaml`). Il est donc conservé d'un lancement à l'autre.
 - Au-delà de 200 lignes, la valeur est tronquée : le détail la montre en entier.
 
+## Copier des lignes
+
+- **Cliquez** une ligne pour la sélectionner ; **Maj+clic** (ou **Maj+↑ / ↓**) étend la
+  sélection à une plage de lignes, surlignée en bleu clair.
+- **Ctrl+C** copie les lignes sélectionnées dans le presse-papiers, telles qu'elles ont été
+  reçues. Si du texte est surligné à la souris, Ctrl+C copie ce texte, comme d'habitude.
+- Le bouton **Copier ▾** propose aussi de copier **toutes les lignes affichées** (filtres
+  compris), en **texte** ou en **NDJSON** (même contenu que « Exporter… »).
+- Au-delà d'environ 5 Mo de texte, la copie est refusée : utilisez **Exporter…**.
+
 ## Afficher, masquer et réordonner les colonnes
 
 Le bouton **Colonnes ▾**, à droite de l'en-tête de la liste, liste toutes les colonnes (heure,

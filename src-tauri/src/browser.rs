@@ -116,11 +116,11 @@ impl Ui for BrowserUi {
     }
 
     fn copy_text(&self, text: &str) -> anyhow::Result<()> {
-        arboard::Clipboard::new()?.set_text(text.to_string()).map_err(|e| anyhow::anyhow!("Presse-papiers : {e}"))
+        with_clipboard(|c| c.set_text(text.to_string()))
     }
 
     fn read_clipboard(&self) -> anyhow::Result<String> {
-        arboard::Clipboard::new()?.get_text().map_err(|e| anyhow::anyhow!("Presse-papiers : {e}"))
+        with_clipboard(|c| c.get_text())
     }
 
     fn notify(&self, title: &str, body: &str) {
@@ -384,4 +384,13 @@ mod tests {
         assert!(same_token("abc", "abc") && !same_token("abd", "abc") && !same_token("ab", "abc"));
         assert_eq!(content_type("/assets/index-x.js"), "text/javascript; charset=utf-8");
     }
+}
+
+/// Presse-papiers gardé ouvert : sous Linux (X11), le texte copié disparaît avec l'objet qui
+/// le détient ; ouvert une fois, il reste disponible tant qu'Ocekour tourne.
+fn with_clipboard<T>(f: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>) -> anyhow::Result<T> {
+    static CLIPBOARD: Mutex<Option<arboard::Clipboard>> = Mutex::new(None);
+    let mut guard = CLIPBOARD.lock();
+    if guard.is_none() { *guard = Some(arboard::Clipboard::new().map_err(|e| anyhow::anyhow!("Presse-papiers : {e}"))?); }
+    f(guard.as_mut().expect("presse-papiers ouvert")).map_err(|e| anyhow::anyhow!("Presse-papiers : {e}"))
 }

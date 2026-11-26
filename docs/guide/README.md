@@ -1,6 +1,6 @@
 # Ocekour — Guide utilisateur
 
-> **Version 2.3.0** · Documentation versionnée avec le code (`docs/guide/` du dépôt).
+> **Version 2.4.0** · Documentation versionnée avec le code (`docs/guide/` du dépôt).
 > Historique des versions : [CHANGELOG.md](CHANGELOG.md).
 
 Ocekour est une visionneuse de logs **locale** pour Windows 10/11. C'est un seul exécutable

@@ -3410,7 +3410,7 @@ dependencies = [
 
 [[package]]
 name = "ocekour"
-version = "2.3.0"
+version = "2.4.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3442,7 +3442,7 @@ dependencies = [
 
 [[package]]
 name = "ocekour-core"
-version = "2.3.0"
+version = "2.4.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3507,7 +3507,7 @@ dependencies = [
 
 [[package]]
 name = "ocekour-headless"
-version = "2.3.0"
+version = "2.4.0"
 dependencies = [
  "anyhow",
  "log",
